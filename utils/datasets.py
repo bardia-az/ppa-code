@@ -100,7 +100,7 @@ def create_rec_dataloader(list_path, imgsz, batch_size, rank=-1, workers=8, shuf
     batch_size = max(min(batch_size, len(dataset)), 1)
     nw = min([os.cpu_count(), batch_size if batch_size > 1 else 0, workers])  # number of workers
     sampler = torch.utils.data.distributed.DistributedSampler(dataset) if rank != -1 else None
-    loader = MyInfiniteDataLoader if infinite else InfiniteDataLoader
+    loader = RealInfiniteDataLoader if infinite else InfiniteDataLoader
     dataloader = loader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=nw, sampler=sampler, pin_memory=True)
     return dataloader
 
@@ -180,80 +180,6 @@ def load_image_rec(path, augment, imgsz=256):
     crop_im = np.ascontiguousarray(crop_im)
     return torch.from_numpy(crop_im)
 
-
-def load_image_me(path, flr=False, fud=False, imgsz=1024):
-    path_name = str(path)
-    try:
-        im = cv2.imread(path_name)
-        assert im is not None, f'Image Not Found {path}'
-        if flr and fud:
-            im = cv2.flip(im, -1)
-        elif flr:
-            im = cv2.flip(im, 1)
-        elif fud:
-            im = cv2.flip(im, 0)
-        h0, w0 = im.shape[:2]
-        # cv2.imshow('flipped', im); cv2.waitKey(0); cv2.destroyAllWindows(); cv2.waitKey(1)
-        interpolation = cv2.INTER_AREA if imgsz<h0 and imgsz<w0 else cv2.INTER_LINEAR
-        im = cv2.resize(im, (imgsz,imgsz), interpolation=interpolation)
-        # cv2.imshow('resized', im); cv2.waitKey(0); cv2.destroyAllWindows(); cv2.waitKey(1)
-        im = im.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB
-        # cv2.imshow('transposed', im); cv2.waitKey(0); cv2.destroyAllWindows(); cv2.waitKey(1)
-        im = np.ascontiguousarray(im)
-        return torch.from_numpy(im)
-    except Exception as e:
-        print(f'could not load the file {path_name}')
-        return torch.zeros((3,imgsz,imgsz))
-
-def create_me_dataloader(list_path, imgsz, batch_size, rank=-1, workers=8, shuffle=False, augment=False):
-    # Make sure only the first process in DDP process the dataset first, and the following others can use the cache
-    with torch_distributed_zero_first(rank):
-        dataset = LoadImagesForME(list_path, imgsz, augment)
-    batch_size = min(batch_size, len(dataset))
-    nw = min([os.cpu_count(), batch_size if batch_size > 1 else 0, workers])  # number of workers
-    sampler = torch.utils.data.distributed.DistributedSampler(dataset) if rank != -1 else None
-    loader = InfiniteDataLoader
-    dataloader = loader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=nw, sampler=sampler, pin_memory=True)
-    return dataloader
-
-class LoadImagesForME(Dataset):
-    def __init__(self, list_path, imgsz, augment):
-        list_path = Path(list_path)
-        self.data_path = []
-        self.imgsz = imgsz
-        self.augment = augment
-        with open(list_path) as f:
-            for line in f:
-                folder_path = line.strip()
-                if len(folder_path) != 0:
-                    self.data_path.append(list_path.parent / 'sequences' / folder_path)
-
-    def __len__(self):
-        return len(self.data_path)
-
-    def __getitem__(self, index):
-        imgs_path = self.data_path[index]
-        flr, fud, sequenceOrderChange = False, False, False
-        if self.augment:
-            flr = bool(np.random.randint(2))
-            fud = bool(np.random.randint(2))
-            sequenceOrderChange = bool(np.random.randint(2))
-        ref2_path = imgs_path / 'im2.png'
-        if sequenceOrderChange:
-            ref1_path = imgs_path / 'im3.png'
-            target_path = imgs_path / 'im1.png'
-        else:
-            target_path = imgs_path / 'im3.png'
-            ref1_path = imgs_path / 'im1.png'
-
-        ref1_rgb = load_image_me(ref1_path, flr=flr, fud=fud, imgsz=self.imgsz)
-        ref2_rgb = load_image_me(ref2_path, flr=flr, fud=fud, imgsz=self.imgsz)
-        target = load_image_me(target_path, flr=flr, fud=fud, imgsz=self.imgsz)
-
-        return ref1_rgb, ref2_rgb, target
-
-    
-
 def create_dataloader(path, imgsz, batch_size, stride, single_cls=False, hyp=None, augment=False, cache=False, pad=0.0,
                       rect=False, rect_img=False, store_img=False, rank=-1, workers=8, image_weights=False, quad=False, prefix=''):
     # Make sure only the first process in DDP process the dataset first, and the following others can use the cache
@@ -304,7 +230,7 @@ class InfiniteDataLoader(torch.utils.data.dataloader.DataLoader):
             yield next(self.iterator)
 
 
-class MyInfiniteDataLoader(torch.utils.data.dataloader.DataLoader):
+class RealInfiniteDataLoader(torch.utils.data.dataloader.DataLoader):
     """ Dataloader that reuses workers
 
     Uses same syntax as vanilla DataLoader
@@ -433,61 +359,6 @@ class LoadImages:
         self.frame = 0
         self.cap = cv2.VideoCapture(path)
         self.frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
-
-    def __len__(self):
-        return self.nf  # number of files
-
-
-class LoadImages_me:
-    def __init__(self, list_path, img_size=1024, stride=32):
-        list_path = Path(list_path)
-        self.data_path = []
-        self.imgsz = img_size
-        self.stride = stride
-        with open(list_path) as f:
-            for line in f:
-                folder_path = line.strip()
-                if len(folder_path) != 0:
-                    self.data_path.append(list_path.parent / 'sequences' / folder_path)
-        self.nf = len(self.data_path)
-
-    def __iter__(self):
-        self.count = 0
-        return self
-
-    def __next__(self):
-        if self.count == self.nf:
-            raise StopIteration
-        path = self.data_path[self.count]
-
-        ref1_path = str(path / 'im1.png')
-        ref2_path = str(path / 'im2.png')
-        target_path = str(path / 'im3.png')
-
-        # Read image
-        self.count += 1
-        ref1_img0 = cv2.imread(ref1_path)  # BGR
-        assert ref1_img0 is not None, f'Image Not Found {ref1_path}'
-        ref2_img0 = cv2.imread(ref2_path)  # BGR
-        assert ref2_img0 is not None, f'Image Not Found {ref2_path}'
-        target_img0 = cv2.imread(target_path)  # BGR
-        assert target_img0 is not None, f'Image Not Found {target_path}'
-        s = f'image {self.count}/{self.nf} {path}: '
-
-        # Padded resize
-        ref1_img = letterbox(ref1_img0, self.imgsz, stride=self.stride, auto=False, scaleFill=True)[0]
-        ref2_img = letterbox(ref2_img0, self.imgsz, stride=self.stride, auto=False, scaleFill=True)[0]
-        target_img = letterbox(target_img0, self.imgsz, stride=self.stride, auto=False, scaleFill=True)[0]
-
-        # Convert
-        ref1_img = ref1_img.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB
-        ref2_img = ref2_img.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB
-        target_img = target_img.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB
-        ref1_img = np.ascontiguousarray(ref1_img)
-        ref2_img = np.ascontiguousarray(ref2_img)
-        target_img = np.ascontiguousarray(target_img)
-
-        return path, ref1_img, ref2_img, target_img, target_img0, s
 
     def __len__(self):
         return self.nf  # number of files

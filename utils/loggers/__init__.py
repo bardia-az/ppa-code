@@ -44,13 +44,6 @@ class Loggers():
                      'metrics/precision', 'metrics/recall', 'metrics/mAP_0.5', 'metrics/mAP_0.5:0.95',  # metrics
                      'val/box_loss', 'val/obj_loss', 'val/cls_loss', 'val/cmprss_loss',  # val loss
                      'x/lr0', 'x/lr1', 'x/lr2']  # params
-        self.keys_me = ['train/L1', 'train/L2', 'train/psnr', 'train/out',  # train loss
-                        'val/L1', 'val/L2', 'val/psnr', 'val/out',  # val loss
-                        'x/lr1', 'x/lr2']  # params
-        self.keys_e2e_intra = ['train/box_loss', 'train/obj_loss', 'train/cls_loss', 'train/loss_o', 'train/loss', 'train/fid_loss(mse)', 'train/bpp_loss', 'train/enc_loss', 'train/aux_loss',   # train loss
-                               'metrics/precision', 'metrics/recall', 'metrics/mAP_0.5', 'metrics/mAP_0.5:0.95',  # metrics
-                               'val/box_loss', 'val/obj_loss', 'val/cls_loss', 'val/loss_o', 'val/fid_loss(mse)', 'val/bpp_loss', 'val/enc_loss', 'val/aux_loss', 'val/loss',  # val loss
-                               'x/lr']  # params
         self.keys_rec = ['train/mae', 'train/mse', 'train/psnr', 'train/grad', 'train/ms-ssim', 'val/mae', 'val/mse', 'val/psnr', 'val/grad', 'val/ms-ssim']
         for k in LOGGERS:
             setattr(self, k, None)  # init empty logger dictionary
@@ -141,54 +134,6 @@ class Loggers():
             file = self.save_dir / 'results.csv'
             n = len(x) + 1  # number of cols
             s = '' if file.exists() else (('%20s,' * n % tuple(['epoch'] + self.keys)).rstrip(',') + '\n')  # add header
-            with open(file, 'a') as f:
-                f.write(s + ('%20.5g,' * n % tuple([epoch] + vals)).rstrip(',') + '\n')
-
-        if self.tb:
-            for k, v in x.items():
-                self.tb.add_scalar(k, v, epoch)
-
-        if self.wandb:
-            self.wandb.log(x)
-            self.wandb.end_epoch(best_result=best_fitness == fi)
-
-    def on_fit_epoch_end_adversary(self, vals, epoch):
-        # Callback runs at the end of each fit (train+val) epoch
-        x = {k: v for k, v in zip(self.keys_rec, vals)}  # dict
-
-        if self.tb:
-            for k, v in x.items():
-                self.tb.add_scalar(k, v, epoch)
-
-        if self.wandb:
-            self.wandb.log(x)
-            self.wandb.end_epoch(best_result=False)
-
-    def on_fit_epoch_end_me(self, vals, epoch, best_fitness, fi):
-        # Callback runs at the end of each fit (train+val) epoch
-        x = {k: v for k, v in zip(self.keys_me, vals)}  # dict
-        if self.csv:
-            file = self.save_dir / 'results.csv'
-            n = len(x) + 1  # number of cols
-            s = '' if file.exists() else (('%20s,' * n % tuple(['epoch'] + self.keys_me)).rstrip(',') + '\n')  # add header
-            with open(file, 'a') as f:
-                f.write(s + ('%20.5g,' * n % tuple([epoch] + vals)).rstrip(',') + '\n')
-
-        if self.tb:
-            for k, v in x.items():
-                self.tb.add_scalar(k, v, epoch)
-
-        if self.wandb:
-            self.wandb.log(x)
-            self.wandb.end_epoch(best_result=best_fitness == fi)
-
-    def on_fit_epoch_end_e2e(self, vals, epoch, best_fitness, fi):
-        # Callback runs at the end of each fit (train+val) epoch
-        x = {k: v for k, v in zip(self.keys_e2e_intra, vals)}  # dict
-        if self.csv:
-            file = self.save_dir / 'results.csv'
-            n = len(x) + 1  # number of cols
-            s = '' if file.exists() else (('%20s,' * n % tuple(['epoch'] + self.keys_e2e_intra)).rstrip(',') + '\n')  # add header
             with open(file, 'a') as f:
                 f.write(s + ('%20.5g,' * n % tuple([epoch] + vals)).rstrip(',') + '\n')
 

@@ -98,7 +98,6 @@ class Model(nn.Module):
                 self.yaml = yaml.safe_load(f)  # model dict
 
         # Define model
-        # self.yaml['cut_layer'] = self.yaml['cut_layer'] if 'cut_layer' in self.yaml else cutting_layer
         self.cutting_layer = cutting_layer
         ch = self.yaml['ch'] = self.yaml.get('ch', ch)  # input channels
         if nc and nc != self.yaml['nc']:
@@ -134,7 +133,6 @@ class Model(nn.Module):
         return self._forward_once(x, profile, visualize, cut_model, T)  # single-scale inference, train
 
     def _forward_augment(self, x, cut_model=0, T=None):
-        # print('augment called')
         img_size = x.shape[-2:]  # height, width
         s = [1, 0.83, 0.67]  # scales
         f = [None, 3, None]  # flips (2-ud, 3-lr)
@@ -142,7 +140,6 @@ class Model(nn.Module):
         for si, fi in zip(s, f):
             xi = scale_img(x.flip(fi) if fi else x, si, gs=int(self.stride.max()))
             yi = self._forward_once(xi, cut_model=cut_model, T=T)[0]  # forward
-            # cv2.imwrite(f'img_{si}.jpg', 255 * xi[0].cpu().numpy().transpose((1, 2, 0))[:, :, ::-1])  # save
             yi = self._descale_pred(yi, fi, si, img_size)
             y.append(yi)
         y = self._clip_augmented(y)  # clip augmented tails
@@ -150,65 +147,29 @@ class Model(nn.Module):
 
     def _forward_once(self, x, profile=False, visualize=False, cut_model=0, T=None):    #cut_model => 0 if no cut, 1 if first half, 2 if second half #T is the intermediate tensor
         y, dt = [], []  # outputs
-        # for m in self.model:
-        #     if(cut_model==2 and m.i<self.cutting_layer):    # second half of the model
-        #         y.append(None)
-        #         continue
-        #     # print('forward called')
-        #     # print(f'{m.i}\t{m.type}')
-        #     if m.f != -1:  # if not from previous layer
-        #         x = y[m.f] if isinstance(m.f, int) else [x if j == -1 else y[j] for j in m.f]  # from earlier layers
-        #     if profile:
-        #         self._profile_one_layer(m, x, dt)
+        for m in self.model:
+            if(cut_model==2 and m.i<self.cutting_layer):    # run only the second half of the model
+                y.append(None)
+                continue
 
-        #     if(cut_model==2 and m.i==self.cutting_layer):    # second half of the model
-        #         # print(f'in forward {T.size()}')
-        #         x = T
-        #     else:
-        #         x = m(x)  # run
+            if m.f != -1:  # if not from previous layer
+                x = y[m.f] if isinstance(m.f, int) else [x if j == -1 else y[j] for j in m.f]  # from earlier layers
+            if profile:
+                self._profile_one_layer(m, x, dt)
 
-        #     # print(x.type())
-        #     # if (isinstance(x, torch.cuda.FloatTensor)):
-        #     #     print(x.size())
-        #     # x = m(x)  # run
-
-        #     y.append(x if m.i in self.save else None)  # save output
-        #     if visualize:
-        #         feature_visualization(x, m.type, m.i, save_dir=visualize, cut_model=cut_model)
-
-        #     if(cut_model==1 and m.i==self.cutting_layer):    # first half of the model
-        #         return x
-
-        # return x
-
-        #### For Time Analysis. !!!!!!!!!!! Comment this part if you want to use it in a normal inference mode !!!!!!!!!!!!!!!
-        if cut_model == 2:
-            for m in self.model:
-                if m.i < self.cutting_layer:
-                    y.append(None)
-                    continue
-                elif m.i == self.cutting_layer:
-                    x = T
-                    y.append(x if m.i in self.save else None)  # save output
-                else:
-                    if m.f != -1:  # if not from previous layer
-                        x = y[m.f] if isinstance(m.f, int) else [x if j == -1 else y[j] for j in m.f]  # from earlier layers
-                    x = m(x)
-                    y.append(x if m.i in self.save else None)  # save output
-            return x
-        elif cut_model == 1:
-            for m in self.model:
-                x = m(x)
-                if m.i==self.cutting_layer:
-                    return x
-        else:
-            for m in self.model:
-                if m.f != -1:  # if not from previous layer
-                    x = y[m.f] if isinstance(m.f, int) else [x if j == -1 else y[j] for j in m.f]  # from earlier layers
+            if(cut_model==2 and m.i==self.cutting_layer):    # input to the second half of the model is T
+                x = T
+            else:
                 x = m(x)  # run
-                y.append(x if m.i in self.save else None)  # save output
-            return x
 
+            y.append(x if m.i in self.save else None)  # save output
+            if visualize:
+                feature_visualization(x, m.type, m.i, save_dir=visualize, cut_model=cut_model)
+
+            if(cut_model==1 and m.i==self.cutting_layer):    # first half of the model
+                return x
+
+        return x
 
     def _descale_pred(self, p, flips, scale, img_size):
         # de-scale predictions following augmented inference (inverse operation)

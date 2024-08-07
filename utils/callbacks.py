@@ -23,7 +23,6 @@ class Callbacks:
         'on_train_epoch_end': [],
 
         'on_train_epoch_end_adversary': [],
-        'on_fit_epoch_end_adversary': [],
 
         'on_val_start': [],
         'on_val_batch_start': [],
@@ -36,10 +35,6 @@ class Callbacks:
         'on_train_end': [],
 
         'teardown': [],
-
-        'on_fit_epoch_end_me': [],
-        'on_fit_epoch_end_e2e': []
-
     }
 
     def register_action(self, hook, name='', callback=None):
