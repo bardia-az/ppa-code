@@ -16,7 +16,6 @@ import time
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
-from PIL import Image
 
 import numpy as np
 import torch
@@ -150,9 +149,9 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         rec_model = Decoder_Rec(cin=make_divisible((model.yaml['backbone'][cutting_layer][3][0]) * model.yaml['width_multiple'], 8), cout=3, first_chs=autoenc_chs).to(device)
     LOGGER.info(f'autoencoder channels: {autoenc_chs}')
 
-    AE_params = sum(p.numel() for p in autoencoder.enc.parameters() if p.requires_grad)
-    AD_params = sum(p.numel() for p in autoencoder.dec.parameters() if p.requires_grad)
-    autoencoder_params = sum(p.numel() for p in autoencoder.parameters() if p.requires_grad)
+    # AE_params = sum(p.numel() for p in autoencoder.enc.parameters() if p.requires_grad)
+    # AD_params = sum(p.numel() for p in autoencoder.dec.parameters() if p.requires_grad)
+    # autoencoder_params = sum(p.numel() for p in autoencoder.parameters() if p.requires_grad)
 
     # Save run settings
     opt.autoenc_chs = autoenc_chs
@@ -394,7 +393,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                     ns = [math.ceil(x * sf / gs) * gs for x in imgs.shape[2:]]  # new shape (stretched to gs-multiple)
                     imgs = nn.functional.interpolate(imgs, size=ns, mode='bilinear', align_corners=False)
 
-            # Forward
+            # First step of the adversarial training (train the RecNet)
             with amp.autocast(enabled=cuda):
                 with torch.no_grad():
                     T = model(imgs, cut_model=1)  # first half of the model
@@ -418,7 +417,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
             scaler.update()
             rec_optimizer.zero_grad()
 
-            # Forward
+            # Second step of the adversarial training (train the Autoencoder)
             with amp.autocast(enabled=cuda):
                 T = model(imgs, cut_model=1)  # first half of the model
                 T_bottleneck = autoencoder(T, task='enc')
@@ -429,7 +428,6 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                 rec_loss, rec_loss_items, _ = compute_rec_loss(imgs, rec_imgs.float())
                 loss_o, loss_items = compute_loss(pred, targets.to(device))  # loss scaled by batch_size
                 loss_r, loss_items_r = compressibility_loss(T_bottleneck)
-                # loss_r, loss_items_r = 0, torch.zeros(1, device=device)
                 loss_items = torch.cat((loss_items, loss_items_r, rec_loss_items))
                 loss = loss_o + loss_r - opt.w_rec * rec_loss
                 if RANK != -1:

@@ -744,10 +744,9 @@ class LoadImagesAndLabels(Dataset):
         if nl:
             labels_out[:, 1:] = torch.from_numpy(labels)
 
-        # Store the image
+        # Store the pre-processed image for the input compression evaluation
         if self.store_img:
             cv2.imwrite('../vvc/image.png', img)
-            # cv2.imwrite('../hevc/image.png', img)
         
         # Convert
         img = img.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB

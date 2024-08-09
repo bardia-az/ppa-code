@@ -160,32 +160,6 @@ def compress_input(img, qp, half=False):
     rec /= 255  # 0 - 255 to 0.0 - 1.0
     return rec.unsqueeze(0), bpp, KB_num
 
-    # import cv2
-    # h, w = img.shape[-2:]
-    # jpg2yuv_report = Path('../hevc/jpg2yuv_report.txt').open('w')
-    # hevc_report = Path('../hevc/hevc_report.txt').open('w')
-    # yuv2png_report = Path('../hevc/yuv2png_report.txt').open('w')
-    # jpg2yuv_command = ['ffmpeg', '-i', '../hevc/image.png', '-f', 'rawvideo', '-pix_fmt', 'yuv444p', '-dst_range', '1', '../hevc/yuv_img.yuv', '-y']
-    # subprocess.call(jpg2yuv_command, stdout=jpg2yuv_report, stderr=subprocess.STDOUT)
-    # hevc_command = ['../hevc/TAppEncoderStatic', '-c', '../hevc/HM_encoder_intra_444.cfg', '-i', '../hevc/yuv_img.yuv', '-b', '../hevc/bitstream.bin', 
-    #                '-o', '../hevc/reconst.yuv', '-wdt', str(w), '-hgt', str(h), '-f', '1', '-fr', '1', '-q', str(qp)]
-    # subprocess.call(hevc_command, stdout=hevc_report, stderr=subprocess.STDOUT)
-    # bpp = os.path.getsize('../hevc/bitstream.bin') * 8 / (w*h)
-    # KB_num = os.path.getsize('../hevc/bitstream.bin') / 1024.0
-    # yuv2png_command = ['ffmpeg', '-f', 'rawvideo', '-pix_fmt', 'yuv444p', '-s', f"{w}x{h}", '-src_range', '1', '-i', '../hevc/reconst.yuv',
-    #                    '-frames', '1', '-pix_fmt', 'rgb24', '../hevc/output.png', '-y']
-    # subprocess.call(yuv2png_command, stdout=yuv2png_report, stderr=subprocess.STDOUT)
-    # jpg2yuv_report.close()
-    # hevc_report.close()
-    # yuv2png_report.close()
-    # rec = cv2.imread('../hevc/output.png')  # BGR
-    # rec = rec.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB
-    # rec = np.ascontiguousarray(rec)
-    # rec = torch.from_numpy(rec).to(img.device, non_blocking=True)
-    # rec = rec.half() if half else rec.float()  # uint8 to fp16/32
-    # rec /= 255  # 0 - 255 to 0.0 - 1.0
-    # return rec.unsqueeze(0), bpp, KB_num
-
 def get_yolo_prediction(T, autoencoder, model):
     if autoencoder is not None:
         T_hat = autoencoder(T, task='dec', bottleneck=T)
