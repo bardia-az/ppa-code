@@ -12,7 +12,6 @@ import os
 import sys
 from pathlib import Path
 from threading import Thread
-from PIL import Image
 
 import numpy as np
 import torch
@@ -84,6 +83,7 @@ def process_batch(detections, labels, iouv):
         correct[matches[:, 1].long()] = matches[:, 2:3] >= iouv
     return correct
 
+
 def add_noise(Tin, noise_type=None, noise_param=1):
     if noise_type is not None:
         if(noise_type.lower()=='gaussian'):
@@ -125,13 +125,7 @@ def run(data,
         noise_type=None,
         noise_spot='latent',
         noise_param=1,
-        # add_noise=False,
-        # noise_type='uniform',
-        # gauss_var=1,
-        # uniform_len=1,
-        # arbitrary_dist=None,
         autoenc_chs=None,
-        # supp_weights=None,  # model.pt path(s)
         track_stats=False,
         dist_range=[-10,14],
         bins=10000,
@@ -147,7 +141,6 @@ def run(data,
         compute_rec_loss = None,
         autoencoder=None,
         rec_model = None,
-        recnet_chs = []
         ):
     # Initialize/load model and set device
     training = model is not None
@@ -166,9 +159,10 @@ def run(data,
         # Load model
         check_suffix(weights, '.pt')
         model = attempt_load(weights, map_location=device)  # load FP32 model
-        model.cutting_layer = model.cutting_layer if hasattr(model, 'cutting_layer') else cut_layer
-        gs = max(int(model.stride.max()), 32)  # grid size (max stride)
-        imgsz = check_img_size(imgsz, s=gs)  # check image size
+        model.cutting_layer = getattr(model, 'cutting_layer', cut_layer)
+        half &= device.type != 'cpu'  # half precision only supported on CUDA
+        model.half() if half else model.float()
+        model.eval()
 
         # Loading Autoencoder
         ckpt = torch.load(weights[0], map_location=device)  # load checkpoint
@@ -178,33 +172,23 @@ def run(data,
             autoencoder = AutoEncoder(autoenc_chs).to(device)
             autoencoder.load_state_dict(ckpt['autoencoder'].state_dict())
             autoencoder.half() if half else autoencoder.float()
-            # autoencoder.eval()
+            autoencoder.eval()
             print('pretrained autoencoder')
         # Loading Reconstruction model
         if 'rec_model' in ckpt:
-            rec_model = Decoder_Rec(cin=ckpt['rec_model'].cin, cout=ckpt['rec_model'].cout, first_chs=ckpt['rec_model'].first_chs).to(device)
+            rec_model = Decoder_Rec(cin=ckpt['rec_model'].cin, cout=ckpt['rec_model'].cout, first_chs=getattr(ckpt['rec_model'], 'first_chs') or getattr(ckpt['rec_model'], 'autoenc_chs')).to(device)
             rec_model.load_state_dict(ckpt['rec_model'].float().state_dict())
             rec_model.half() if half else rec_model.float()
-            # rec_model.eval()
+            rec_model.eval()
             compute_rec_loss = ComputeRecLoss(MAX=1.0, w_grad=0, compute_grad=False)  # init loss class
             print('pretrained reconstruction model')
 
         # Data
         data = check_dataset(data, suffix=data_suffix)  # check
-
-    # Half
-    half &= device.type != 'cpu'  # half precision only supported on CUDA
-    model.half() if half else model.float()
-
-    if rec_model is not None:
-        rec_model.eval()
-        rec_model.half() if half else rec_model.float()
-    if autoencoder is not None:
-        autoencoder.eval()
-        autoencoder.half() if half else autoencoder.float()
+        gs = max(int(model.stride.max()), 32)  # grid size (max stride)
+        imgsz = check_img_size(imgsz, s=gs)  # check image size
 
     # Configure
-    model.eval()
     is_coco = isinstance(data.get('val'), str) and data['val'].endswith('coco/val2017.txt')  # COCO dataset
     nc = 1 if single_cls else int(data['nc'])  # number of classes
     iouv = torch.linspace(0.5, 0.95, 10).to(device)  # iou vector for mAP@0.5:0.95
@@ -230,8 +214,6 @@ def run(data,
     loss_r = torch.zeros(1, device=device)
     jdict, stats, ap, ap_class = [], [], [], []
     psnr_mag = 0
-    # if arbitrary_dist is not None:
-    #     pdf = np.load(arbitrary_dist)
     stats_bottleneck = StatCalculator(dist_range, bins, per_chs=True) if track_stats else None
 
     for batch_i, (img, targets, paths, shapes) in enumerate(tqdm(dataloader, desc=s)):
@@ -263,12 +245,6 @@ def run(data,
             loss_rec_tmp, psnr_mag_tmp = compute_rec_loss(img, rec_img)[1:]
             loss_rec += loss_rec_tmp
             psnr_mag += psnr_mag_tmp
-
-                # elif(noise_type=='arbitrary'):
-                #     r_int = torch.from_numpy(np.random.choice(np.arange(-255,256), size=T.size(), p=pdf)).to(device)
-                #     r_real = torch.rand_like(T) - 0.5
-                #     r = r_int + r_real
-                #     N = r * 20 / 255
 
         dt[1] += time_sync() - t2
 
@@ -419,10 +395,11 @@ def run(data,
 
 def parse_opt():
     parser = argparse.ArgumentParser()
+    # Object detection arguments
     parser.add_argument('--data', type=str, default=ROOT / 'data/coco128.yaml', help='dataset.yaml path')
     parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'yolov5s.pt', help='model.pt path(s)')
     parser.add_argument('--batch-size', type=int, default=32, help='batch size')
-    parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=640, help='inference size (pixels)')
+    parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=512, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.001, help='confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.6, help='NMS IoU threshold')
     parser.add_argument('--task', default='val', help='train, val, test, speed or study')
@@ -438,25 +415,16 @@ def parse_opt():
     parser.add_argument('--name', default='exp', help='save to project/name')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
-
+    # Noise addition arguments
     parser.add_argument('--noise-type', default=None, choices=['uniform', 'gaussian', 'laplacian', 'dropout'], help='type of the added noise')
     parser.add_argument('--noise-spot', default='latent', choices=['latent', 'bottleneck', 'input'], help='where noise should be applied')
-    parser.add_argument('--noise-param', type=float, default=1, help='noise parameter (length for uniform, std for gaussian, lambda for laplacia, prob for dropout)')
-    # parser.add_argument('--add-noise', action='store_true', help='adding noise to the cutting point')
-    # parser.add_argument('--noise-type', default='uniform', choices=['uniform', 'gaussian', 'uni_gaussian', 'arbitrary'], help='type of the added noise')
-    # parser.add_argument('--gauss-var', type=float, default=1, help='variance of the gaussian noise')
-    # parser.add_argument('--uniform-len', type=float, default=1, help='the length of the uniform distribution')
-    # parser.add_argument('--arbitrary-dist', default=None, help='the numpy file containing the distribution')
-
+    parser.add_argument('--noise-param', type=float, default=1, help='noise parameter (length for uniform, std for gaussian, lambda for laplacian, prob for dropout)')
     # Supplemental arguments
-    # parser.add_argument('--autoenc-chs',  type=int, nargs='*', default=[], help='number of channels in autoencoder')
-    # parser.add_argument('--supp-weights', type=str, default=None, help='initial weights path for the autoencoder')
-    parser.add_argument('--track-stats', action='store_true', help='track the statistical properties of the residuals')
+    parser.add_argument('--track-stats', action='store_true', help='track the statistical properties of the bottleneck')
     parser.add_argument('--dist-range',  type=float, nargs='*', default=[-3,3], help='the range of the distribution')
     parser.add_argument('--bins', type=int, default=1000, help='number of bins in histogram')
     parser.add_argument('--data-suffix', type=str, default='', help='data path suffix')
-    parser.add_argument('--cut-layer', type=int, default=-1, help='the index of the cutting layer (AFTER this layer, the model will be split)')
-    parser.add_argument('--recnet-chs',  type=int, nargs='*', default=[], help='number of channels in the frist non-yolo layers of RecNet')
+    parser.add_argument('--cut-layer', type=int, default=0, help='the index of the cutting layer (AFTER this layer, the model will be split)')
 
     opt = parser.parse_args()
     opt.data = check_yaml(opt.data)  # check YAML
