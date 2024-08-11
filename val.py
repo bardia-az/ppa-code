@@ -17,7 +17,6 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from tqdm import tqdm
-# import torchjpeg.dct as dct
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
@@ -106,7 +105,7 @@ def add_noise(Tin, noise_type=None, noise_param=1):
 def run(data,
         weights=None,  # model.pt path(s)
         batch_size=32,  # batch size
-        imgsz=640,  # inference size (pixels)
+        imgsz=512,  # inference size (pixels)
         conf_thres=0.001,  # confidence threshold
         iou_thres=0.6,  # NMS IoU threshold
         task='val',  # train, val, test, speed or study
@@ -130,7 +129,7 @@ def run(data,
         dist_range=[-10,14],
         bins=10000,
         data_suffix='',
-        cut_layer=-1,
+        cut_layer=0,
         model=None,
         dataloader=None,
         save_dir=Path(''),
@@ -176,7 +175,7 @@ def run(data,
             print('pretrained autoencoder')
         # Loading Reconstruction model
         if 'rec_model' in ckpt:
-            rec_model = Decoder_Rec(cin=ckpt['rec_model'].cin, cout=ckpt['rec_model'].cout, first_chs=getattr(ckpt['rec_model'], 'first_chs') or getattr(ckpt['rec_model'], 'autoenc_chs')).to(device)
+            rec_model = Decoder_Rec(cin=ckpt['rec_model'].cin, cout=ckpt['rec_model'].cout, first_chs=getattr(ckpt['rec_model'], 'first_chs', None) or getattr(ckpt['rec_model'], 'autoenc_chs', None)).to(device)
             rec_model.load_state_dict(ckpt['rec_model'].float().state_dict())
             rec_model.half() if half else rec_model.float()
             rec_model.eval()
