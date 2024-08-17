@@ -108,7 +108,6 @@ class Loggers():
 
         if self.wandb:
             self.wandb.log(x)
-            # self.wandb.end_epoch(best_result=False)
             self.wandb.log({"Reconstruction": wandb.Image(str(pic), caption=pic.name)})
 
     def on_train_epoch_end(self, epoch):

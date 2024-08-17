@@ -75,8 +75,6 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     rec_dir = (save_dir / 'reconstructions')
     rec_dir.mkdir(parents=True, exist_ok=True)
 
-    
-
     # Hyperparameters
     if isinstance(hyp, str):
         with open(hyp, errors='ignore') as f:
@@ -88,7 +86,6 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     LOGGER.info(colorstr('hyperparameters: ') + ', '.join(f'{k}={v}' for k, v in hyp.items()))
 
     data_dict = None
-
     # Loggers
     if RANK in [-1, 0]:
         loggers = Loggers(save_dir, weights, opt, hyp, LOGGER)  # loggers instance
@@ -148,10 +145,6 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         autoencoder = AutoEncoder(autoenc_chs).to(device)
         rec_model = Decoder_Rec(cin=make_divisible((model.yaml['backbone'][cutting_layer][3][0]) * model.yaml['width_multiple'], 8), cout=3, first_chs=autoenc_chs).to(device)
     LOGGER.info(f'autoencoder channels: {autoenc_chs}')
-
-    # AE_params = sum(p.numel() for p in autoencoder.enc.parameters() if p.requires_grad)
-    # AD_params = sum(p.numel() for p in autoencoder.dec.parameters() if p.requires_grad)
-    # autoencoder_params = sum(p.numel() for p in autoencoder.parameters() if p.requires_grad)
 
     # Save run settings
     opt.autoenc_chs = autoenc_chs
@@ -304,7 +297,6 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
             if not opt.noautoanchor:
                 check_anchors(dataset, model=model, thr=hyp['anchor_t'], imgsz=imgsz)
             model.half().float()  # pre-reduce anchor precision
-            # autoencoder.half().float()
 
         callbacks.run('on_pretrain_routine_end')
 
@@ -486,8 +478,8 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                                         compute_loss=compute_loss,
                                         compressibility_loss=compressibility_loss,
                                         compute_rec_loss=compute_rec_loss,
-                                        autoencoder=deepcopy(autoencoder).half(),
-                                        rec_model=deepcopy(rec_model).half())
+                                        autoencoder=deepcopy(autoencoder),
+                                        rec_model=deepcopy(rec_model))
                 
                 results_rec= val_rec.run(None,
                                          batch_size=batch_size // WORLD_SIZE * 2,
@@ -575,8 +567,8 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                                             callbacks=callbacks,
                                             compute_loss=compute_loss,      # val best model with plots
                                             compute_rec_loss=compute_rec_loss,
-                                            autoencoder=best_autoencoder.half(),
-                                            rec_model=best_rec_model.half())
+                                            autoencoder=best_autoencoder,
+                                            rec_model=best_rec_model)
                     
                     results_rec= val_rec.run(None,
                                          batch_size=batch_size // WORLD_SIZE * 2,
@@ -584,13 +576,11 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                                          model=model,
                                          dataloader=[],
                                          save_dir=save_dir,
-                                         autoencoder=best_autoencoder.half(),
-                                         rec_model=best_rec_model.half(),
+                                         autoencoder=best_autoencoder,
+                                         rec_model=best_rec_model,
                                          sample_img=opt.sample_img,
                                          store_img = rec_picture)
                     
-                    # if is_coco:
-                        # callbacks.run('on_fit_epoch_end', list(mloss) + list(results) + lr, epoch, best_fitness, fi)
                     log_vals = list(mloss[-5:]) + list(results)[-5:]
                     callbacks.run('on_train_epoch_end_adversary', log_vals, best_epoch, rec_picture)
                     log_vals = list(mloss[:4]) + list(results)[:-5] + lr
@@ -611,7 +601,7 @@ def parse_opt(known=False):
     parser.add_argument('--hyp', type=str, default=ROOT / 'data/hyps/hyp.scratch.yaml', help='hyperparameters path')
     parser.add_argument('--epochs', type=int, default=300)
     parser.add_argument('--batch-size', type=int, default=16, help='total batch size for all GPUs, -1 for autobatch')
-    parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=640, help='train, val image size (pixels)')
+    parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=512, help='train, val image size (pixels)')
     parser.add_argument('--rect', action='store_true', help='rectangular training')
     parser.add_argument('--resume', nargs='?', const=True, default=False, help='resume most recent training')
     parser.add_argument('--nosave', action='store_true', help='only save final checkpoint')
@@ -637,22 +627,17 @@ def parse_opt(known=False):
     parser.add_argument('--freeze', type=int, default=0, help='Number of layers to freeze. backbone=10, all=24')
     parser.add_argument('--save-period', type=int, default=-1, help='Save checkpoint every x epochs (disabled if < 1)')
     parser.add_argument('--local_rank', type=int, default=-1, help='DDP parameter, do not modify')
-
     # Weights & Biases arguments
     parser.add_argument('--entity', default=None, help='W&B: Entity')
     parser.add_argument('--upload_dataset', action='store_true', help='W&B: Upload dataset as artifact table')
     parser.add_argument('--bbox_interval', type=int, default=-1, help='W&B: Set bounding-box image logging interval')
     parser.add_argument('--artifact_alias', type=str, default='latest', help='W&B: Version of dataset artifact to use')
-
     # Supplemental arguments
-    parser.add_argument('--autoenc-chs',  type=int, nargs='*', default=[], help='number of channels in autoencoder')
-    # parser.add_argument('--supp-weights', type=str, default=None, help='initial weights path for the autoencoder')
-    # parser.add_argument('--rec-weights', type=str, default=None, help='initial weights path for the reconstructor')
+    parser.add_argument('--autoenc-chs',  type=int, nargs='*', default=[], help='number of channels in autoencoder suggested: [192, 128, 64]')
     parser.add_argument('--train-yolo', type=str, default='all', help='which part of the yolo gets trained: backend, all, nothing')
     parser.add_argument('--freeze-autoenc', action='store_true', help='determins autoencoder weights to be freezed')
     parser.add_argument('--rec-only', action='store_true', help='only train the reconstruction netweork')
     parser.add_argument('--cut-layer', type=int, default=-1, help='the index of the cutting layer (AFTER this layer, the model will be split)')
-
     # Some of the hyperparameters
     parser.add_argument('--lr0', type=float, default=0.01, help='initial learning rate')
     parser.add_argument('--lrf', type=float, default=0.2, help='final OneCycleLR learning rate (lr0 * lrf)')
