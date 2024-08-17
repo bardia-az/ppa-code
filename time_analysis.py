@@ -18,7 +18,7 @@ import subprocess
 import numpy as np
 import cv2
 
-from val_image_compression import tensors_to_tiled, tiled_to_tensor, read_y_channel
+from compress import tensors_to_tiled, tiled_to_tensor, read_y_channel
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory

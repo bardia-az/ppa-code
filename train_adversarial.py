@@ -33,7 +33,7 @@ if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))  # add ROOT to PATH
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
-import val, val_rec  # for end-of-epoch mAP
+import val, reconstruct  # for end-of-epoch mAP
 from models.experimental import attempt_load
 from models.supplemental import AutoEncoder, Decoder_Rec
 from models.yolo import Model
@@ -481,16 +481,13 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                                         autoencoder=deepcopy(autoencoder),
                                         rec_model=deepcopy(rec_model))
                 
-                results_rec= val_rec.run(None,
-                                         batch_size=batch_size // WORLD_SIZE * 2,
-                                         imgsz=[imgsz],
-                                         model=ema.ema,
-                                         dataloader=[],
-                                         save_dir=save_dir,
-                                         autoencoder=deepcopy(autoencoder),
-                                         rec_model=deepcopy(rec_model),
-                                         sample_img=opt.sample_img,
-                                         store_img = rec_picture)
+                reconstruct.run(imgsz=[imgsz],
+                                model=ema.ema,
+                                save_dir=save_dir,
+                                autoencoder=deepcopy(autoencoder),
+                                rec_model=deepcopy(rec_model),
+                                sample_img=opt.sample_img,
+                                store_img = rec_picture)
      
             log_vals = list(mloss[-5:]) + list(results)[-5:]
             callbacks.run('on_train_epoch_end_adversary', log_vals, epoch, rec_picture)
@@ -570,16 +567,13 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                                             autoencoder=best_autoencoder,
                                             rec_model=best_rec_model)
                     
-                    results_rec= val_rec.run(None,
-                                         batch_size=batch_size // WORLD_SIZE * 2,
-                                         imgsz=[imgsz],
-                                         model=model,
-                                         dataloader=[],
-                                         save_dir=save_dir,
-                                         autoencoder=best_autoencoder,
-                                         rec_model=best_rec_model,
-                                         sample_img=opt.sample_img,
-                                         store_img = rec_picture)
+                    reconstruct.run(imgsz=[imgsz],
+                                    model=model,
+                                    save_dir=save_dir,
+                                    autoencoder=best_autoencoder,
+                                    rec_model=best_rec_model,
+                                    sample_img=opt.sample_img,
+                                    store_img = rec_picture)
                     
                     log_vals = list(mloss[-5:]) + list(results)[-5:]
                     callbacks.run('on_train_epoch_end_adversary', log_vals, best_epoch, rec_picture)

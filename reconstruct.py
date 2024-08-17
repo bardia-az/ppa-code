@@ -7,11 +7,9 @@ Usage:
 """
 
 import argparse
-import json
 import os
 import sys
 from pathlib import Path
-from threading import Thread
 from PIL import Image
 
 import numpy as np
@@ -20,7 +18,7 @@ import torch.nn.functional as F
 from tqdm import tqdm
 # import torchjpeg.dct as dct
 
-from val_image_compression import compress_input, compress_tensors, tensors_to_tiled, tiled_to_tensor
+from compress import compress_input, compress_tensors, tensors_to_tiled, tiled_to_tensor
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
@@ -30,10 +28,9 @@ ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
 from models.experimental import attempt_load
 from models.supplemental import AutoEncoder, Decoder_Rec
-from utils.datasets import create_rec_dataloader, LoadImages
-from utils.general import LOGGER, StatCalculator, check_img_size, check_requirements, check_suffix, increment_path, print_args
+from utils.datasets import LoadImages
+from utils.general import check_img_size, check_requirements, check_suffix, increment_path, print_args
 from utils.torch_utils import select_device
-from utils.loss import ComputeRecLoss, CompressibilityLoss
 
 def add_noise(Tin, noise_type=None, noise_param=1):
     if noise_type is not None:
@@ -54,7 +51,7 @@ def add_noise(Tin, noise_type=None, noise_param=1):
 
 @torch.no_grad()
 def run(weights=None,  # model.pt path(s)
-        imgsz=640,  # inference size (pixels)
+        imgsz=512,  # inference size (pixels)
         device='',  # cuda device, i.e. 0 or 0,1,2,3 or cpu
         augment=False,  # augmented inference
         project=ROOT / 'runs/val',  # save to project/name
