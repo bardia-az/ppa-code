@@ -15,7 +15,6 @@ from threading import Thread
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 from tqdm import tqdm
 
 FILE = Path(__file__).resolve()
@@ -35,6 +34,7 @@ from utils.plots import output_to_target, plot_images, plot_val_study
 from utils.torch_utils import select_device, time_sync
 from utils.callbacks import Callbacks
 from utils.loss import ComputeRecLoss
+from utils.utils import add_noise
 
 
 def save_one_txt(predn, save_conf, shape, file):
@@ -82,23 +82,6 @@ def process_batch(detections, labels, iouv):
         correct[matches[:, 1].long()] = matches[:, 2:3] >= iouv
     return correct
 
-
-def add_noise(Tin, noise_type=None, noise_param=1):
-    if noise_type is not None:
-        if(noise_type.lower()=='gaussian'):
-            N = (noise_param) * torch.randn_like(Tin)    # gauss_var is actually sigma, not variance
-            Tout = Tin + N
-        elif(noise_type.lower()=='uniform'):
-            N = (noise_param) * torch.rand_like(Tin) - noise_param/2
-            Tout = Tin + N
-        elif(noise_type.lower()=='dropout'):
-            Tout = F.dropout(Tin, p=noise_param)
-        elif(noise_type.lower()=='laplacian'):
-            N = torch.from_numpy(np.random.laplace(0, noise_param, Tin.shape)).to(Tin.dtype).to(Tin.device)
-            Tout = Tin + N
-    else:
-        Tout = Tin
-    return Tout
 
 
 @torch.no_grad()
@@ -159,9 +142,6 @@ def run(data,
         check_suffix(weights, '.pt')
         model = attempt_load(weights, map_location=device)  # load FP32 model
         model.cutting_layer = getattr(model, 'cutting_layer', cut_layer)
-        half &= device.type != 'cpu'  # half precision only supported on CUDA
-        model.half() if half else model.float()
-        model.eval()
 
         # Loading Autoencoder
         ckpt = torch.load(weights[0], map_location=device)  # load checkpoint
@@ -170,15 +150,11 @@ def run(data,
             autoenc_chs = ckpt['autoencoder'].chs
             autoencoder = AutoEncoder(autoenc_chs).to(device)
             autoencoder.load_state_dict(ckpt['autoencoder'].state_dict())
-            autoencoder.half() if half else autoencoder.float()
-            autoencoder.eval()
             print('pretrained autoencoder')
         # Loading Reconstruction model
         if 'rec_model' in ckpt:
             rec_model = Decoder_Rec(cin=ckpt['rec_model'].cin, cout=ckpt['rec_model'].cout, first_chs=getattr(ckpt['rec_model'], 'first_chs', None) or getattr(ckpt['rec_model'], 'autoenc_chs', None)).to(device)
             rec_model.load_state_dict(ckpt['rec_model'].float().state_dict())
-            rec_model.half() if half else rec_model.float()
-            rec_model.eval()
             compute_rec_loss = ComputeRecLoss(MAX=1.0, w_grad=0, compute_grad=False)  # init loss class
             print('pretrained reconstruction model')
 
@@ -186,6 +162,17 @@ def run(data,
         data = check_dataset(data, suffix=data_suffix)  # check
         gs = max(int(model.stride.max()), 32)  # grid size (max stride)
         imgsz = check_img_size(imgsz, s=gs)  # check image size
+
+    # Half precision
+    half &= device.type != 'cpu'  # half precision only supported on CUDA
+    model.eval()
+    model.half() if half else model.float()
+    if rec_model is not None:
+        rec_model.eval()
+        rec_model.half() if half else rec_model.float()
+    if autoencoder is not None:
+        autoencoder.eval()
+        autoencoder.half() if half else autoencoder.float()
 
     # Configure
     is_coco = isinstance(data.get('val'), str) and data['val'].endswith('coco/val2017.txt')  # COCO dataset

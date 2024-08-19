@@ -14,9 +14,7 @@ from PIL import Image
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 from tqdm import tqdm
-# import torchjpeg.dct as dct
 
 from compress import compress_input, compress_tensors, tensors_to_tiled, tiled_to_tensor
 
@@ -29,29 +27,13 @@ ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 from models.experimental import attempt_load
 from models.supplemental import AutoEncoder, Decoder_Rec
 from utils.datasets import LoadImages
-from utils.general import check_img_size, check_requirements, check_suffix, increment_path, print_args
+from utils.general import check_requirements, check_suffix, increment_path, print_args
 from utils.torch_utils import select_device
+from utils.utils import add_noise
 
-def add_noise(Tin, noise_type=None, noise_param=1):
-    if noise_type is not None:
-        if(noise_type.lower()=='gaussian'):
-            N = (noise_param) * torch.randn_like(Tin)    # gauss_var is actually sigma, not variance
-            Tout = Tin + N
-        elif(noise_type.lower()=='uniform'):
-            N = (noise_param) * torch.rand_like(Tin) - noise_param/2
-            Tout = Tin + N
-        elif(noise_type.lower()=='dropout'):
-            Tout = F.dropout(Tin, p=noise_param)
-        elif(noise_type.lower()=='laplacian'):
-            N = torch.from_numpy(np.random.laplace(0, noise_param, Tin.shape)).to(Tin.dtype).to(Tin.device)
-            Tout = Tin + N
-    else:
-        Tout = Tin
-    return Tout
 
 @torch.no_grad()
 def run(weights=None,  # model.pt path(s)
-        imgsz=512,  # inference size (pixels)
         device='',  # cuda device, i.e. 0 or 0,1,2,3 or cpu
         augment=False,  # augmented inference
         project=ROOT / 'runs/val',  # save to project/name
@@ -111,10 +93,6 @@ def run(weights=None,  # model.pt path(s)
         else:
             raise Exception('RecNet model is not available in the checkpoint')
         
-        # Data
-        gs = 8  # grid size (max stride for reconstruction only)
-        imgsz = check_img_size(imgsz, s=gs)  # check image size
-
     # Half precision
     half &= device.type != 'cpu'  # half precision only supported on CUDA
     model.eval()
@@ -126,11 +104,11 @@ def run(weights=None,  # model.pt path(s)
         autoencoder.eval()
         autoencoder.half() if half else autoencoder.float()
 
-    if len(imgsz)==1:
-        imgsz = imgsz * 2
     if not training and device.type != 'cpu':
-        model(torch.zeros(1, 3, imgsz[0], imgsz[1]).to(device).type_as(next(model.parameters())))  # run once
-    
+        model(torch.zeros(1, 3, 1024, 1024).to(device).type_as(next(model.parameters())))  # run once
+
+    gs = 8  # grid size (max stride for reconstruction only)
+
     if sample_img is not None:
         imgs = LoadImages(sample_img, img_size=None, stride=gs, auto=True, scaleup=False, store_img=(compression=='input'))
         data_iter = tqdm(imgs, desc='storing the reconstructed images') if not training else imgs
@@ -173,7 +151,6 @@ def run(weights=None,  # model.pt path(s)
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'yolov5s.pt', help='model.pt path(s)')
-    parser.add_argument('--imgsz', '--img', '--img-size', type=int, nargs='*', default=[256], help='inference size (pixels)')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--project', default=ROOT / 'runs/val', help='save to project/name')
     parser.add_argument('--name', default='exp', help='save to project/name')
