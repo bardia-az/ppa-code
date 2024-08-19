@@ -238,7 +238,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     ema = ModelEMA(model) if RANK in [-1, 0] else None
 
     # Resume
-    start_epoch, best_fitness = 0, float('-inf')
+    start_epoch, best_fitness, best_epoch = 0, [float('-inf')], -1
     if pretrained:
         # Optimizer
         if ckpt['optimizer'] is not None:
@@ -481,8 +481,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                                         autoencoder=deepcopy(autoencoder),
                                         rec_model=deepcopy(rec_model))
                 
-                reconstruct.run(imgsz=[imgsz],
-                                model=ema.ema,
+                reconstruct.run(model=ema.ema,
                                 save_dir=save_dir,
                                 autoencoder=deepcopy(autoencoder),
                                 rec_model=deepcopy(rec_model),
@@ -567,8 +566,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                                             autoencoder=best_autoencoder,
                                             rec_model=best_rec_model)
                     
-                    reconstruct.run(imgsz=[imgsz],
-                                    model=model,
+                    reconstruct.run(model=model,
                                     save_dir=save_dir,
                                     autoencoder=best_autoencoder,
                                     rec_model=best_rec_model,
@@ -631,7 +629,7 @@ def parse_opt(known=False):
     parser.add_argument('--train-yolo', type=str, default='all', help='which part of the yolo gets trained: backend, all, nothing')
     parser.add_argument('--freeze-autoenc', action='store_true', help='determins autoencoder weights to be freezed')
     parser.add_argument('--rec-only', action='store_true', help='only train the reconstruction netweork')
-    parser.add_argument('--cut-layer', type=int, default=-1, help='the index of the cutting layer (AFTER this layer, the model will be split)')
+    parser.add_argument('--cut-layer', type=int, default=4, help='the index of the cutting layer (AFTER this layer, the model will be split) (ONLY 4 is supported for now)')
     # Some of the hyperparameters
     parser.add_argument('--lr0', type=float, default=0.01, help='initial learning rate')
     parser.add_argument('--lrf', type=float, default=0.2, help='final OneCycleLR learning rate (lr0 * lrf)')
