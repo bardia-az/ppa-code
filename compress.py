@@ -19,7 +19,6 @@ import numpy as np
 import torch
 from tqdm import tqdm
 import subprocess
-import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.rcParams['figure.dpi'] = 200
 
@@ -32,59 +31,15 @@ ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 from models.experimental import attempt_load
 from models.supplemental import AutoEncoder, Decoder_Rec
 from utils.datasets import create_dataloader
-from utils.general import (LOGGER, StatCalculator, check_file, box_iou, check_dataset, check_img_size, check_requirements, check_suffix, check_yaml,
-                           coco80_to_coco91_class, colorstr, increment_path, non_max_suppression, print_args,
-                           scale_coords, xywh2xyxy, xyxy2xywh, print_args_to_file)
+from utils.general import (LOGGER, StatCalculator, check_file, check_dataset, check_img_size, check_requirements, check_suffix, check_yaml,
+                           coco80_to_coco91_class, colorstr, non_max_suppression, print_args,
+                           scale_coords, xywh2xyxy)
 from utils.metrics import ap_per_class, ConfusionMatrix
-from utils.plots import output_to_target, plot_images, plot_val_study
+from utils.plots import output_to_target, plot_images
 from utils.torch_utils import select_device, time_sync
 from utils.callbacks import Callbacks
 from utils.loss import ComputeRecLoss
-
-
-def save_one_txt(predn, save_conf, shape, file):
-    # Save one txt result
-    gn = torch.tensor(shape)[[1, 0, 1, 0]]  # normalization gain whwh
-    for *xyxy, conf, cls in predn.tolist():
-        xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
-        line = (cls, *xywh, conf) if save_conf else (cls, *xywh)  # label format
-        with open(file, 'a') as f:
-            f.write(('%g ' * len(line)).rstrip() % line + '\n')
-
-
-def save_one_json(predn, jdict, path, class_map):
-    # Save one JSON result {"image_id": 42, "category_id": 18, "bbox": [258.15, 41.29, 348.26, 243.78], "score": 0.236}
-    image_id = int(path.stem) if path.stem.isnumeric() else path.stem
-    box = xyxy2xywh(predn[:, :4])  # xywh
-    box[:, :2] -= box[:, 2:] / 2  # xy center to top-left corner
-    for p, b in zip(predn.tolist(), box.tolist()):
-        jdict.append({'image_id': image_id,
-                      'category_id': class_map[int(p[5])],
-                      'bbox': [round(x, 3) for x in b],
-                      'score': round(p[4], 5)})
-
-
-def process_batch(detections, labels, iouv):
-    """
-    Return correct predictions matrix. Both sets of boxes are in (x1, y1, x2, y2) format.
-    Arguments:
-        detections (Array[N, 6]), x1, y1, x2, y2, conf, class
-        labels (Array[M, 5]), class, x1, y1, x2, y2
-    Returns:
-        correct (Array[N, 10]), for 10 IoU levels
-    """
-    correct = torch.zeros(detections.shape[0], iouv.shape[0], dtype=torch.bool, device=iouv.device)
-    iou = box_iou(labels[:, 1:], detections[:, :4])
-    x = torch.where((iou >= iouv[0]) & (labels[:, 0:1] == detections[:, 5]))  # IoU above threshold and classes match
-    if x[0].shape[0]:
-        matches = torch.cat((torch.stack(x, 1), iou[x[0], x[1]][:, None]), 1).cpu().numpy()  # [label, detection, iou]
-        if x[0].shape[0] > 1:
-            matches = matches[matches[:, 2].argsort()[::-1]]
-            matches = matches[np.unique(matches[:, 1], return_index=True)[1]]
-            matches = matches[np.unique(matches[:, 0], return_index=True)[1]]
-        matches = torch.Tensor(matches).to(iouv.device)
-        correct[matches[:, 1].long()] = matches[:, 2:3] >= iouv
-    return correct
+from utils.utils import save_one_json, save_one_txt, process_batch
 
 
 def read_y_channel(file, w, h):
@@ -461,7 +416,7 @@ def parse_opt():
     parser.add_argument('--data', type=str, default=ROOT / 'data/coco128.yaml', help='dataset.yaml path')
     parser.add_argument('--weights', type=str, default=ROOT / 'yolov5s.pt', help='model.pt path(s)')
     parser.add_argument('--batch-size', type=int, default=1, help='batch size')
-    parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=640, help='inference size (pixels)')
+    parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=512, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.001, help='confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.6, help='NMS IoU threshold')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
@@ -475,7 +430,6 @@ def parse_opt():
     parser.add_argument('--name', default='exp', help='save to project/name')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
-
     # Supplemental arguments
     parser.add_argument('--track-stats', action='store_true', help='track the statistical properties of the error')
     parser.add_argument('--dist-range',  type=float, nargs='*', default=[-4,4], help='the range of the distribution')
@@ -483,12 +437,10 @@ def parse_opt():
     parser.add_argument('--qp', type=int, default=24, help='QP for the vvc encoder')
     parser.add_argument('--chs-in-w', type=int, default=8, help='number of channels is width in the tiled tensor')
     parser.add_argument('--chs-in-h', type=int, default=8, help='number of channels is height in the tiled tensor')
-    # parser.add_argument('--tensors-min', type=float, default=-0.2786, help='the clipping lower bound for the intermediate tensors')
-    # parser.add_argument('--tensors-max', type=float, default=1.4, help='the clipping upper bound for the intermediate tensors')
     parser.add_argument('--tensors-min', type=float, default=None, help='the clipping lower bound for the intermediate tensors')
     parser.add_argument('--tensors-max', type=float, default=None, help='the clipping upper bound for the intermediate tensors')
     parser.add_argument('--compression', type=str, default='input', help='compress input or latent space ("input", "bottleneck")')
-    parser.add_argument('--cut-layer', type=int, default=-1, help='the index of the cutting layer (AFTER this layer, the model will be split)')
+    parser.add_argument('--cut-layer', type=int, default=4, help='the index of the cutting layer (AFTER this layer, the model will be split)')
 
     opt = parser.parse_args()
     opt.data = check_yaml(opt.data)  # check YAML
