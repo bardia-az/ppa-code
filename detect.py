@@ -24,13 +24,14 @@ if str(ROOT) not in sys.path:
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
 from models.experimental import attempt_load
-from models.supplemental import AutoEncoder
+from models.supplemental import AutoEncoder, Decoder_Rec
 from utils.datasets import IMG_FORMATS, VID_FORMATS, LoadImages, LoadStreams
 from utils.general import (LOGGER, apply_classifier, check_file, check_img_size, check_imshow, check_requirements,
                            check_suffix, colorstr, increment_path, non_max_suppression, print_args, save_one_box,
                            scale_coords, strip_optimizer, xyxy2xywh)
 from utils.plots import Annotator, colors
 from utils.torch_utils import load_classifier, select_device, time_sync
+from utils.utils import add_noise
 
 
 @torch.no_grad()
@@ -59,8 +60,9 @@ def run(weights=ROOT / 'yolov5s.pt',  # model.pt path(s)
         hide_conf=False,  # hide confidences
         half=False,  # use FP16 half-precision inference
         dnn=False,  # use OpenCV DNN for ONNX inference
-        autoenc_chs=None,   # number of channels in the auto encoder
-        supp_weights=None,  # autoencoder model.pt path(s)
+        noise_type=None,
+        noise_spot='latent',
+        noise_param=1,
         ):
     source = str(source)
     save_img = not nosave and not source.endswith('.txt')  # save inference images
@@ -130,18 +132,23 @@ def run(weights=ROOT / 'yolov5s.pt',  # model.pt path(s)
     imgsz = check_img_size(imgsz, s=stride)  # check image size
 
     # Loading Autoencoder
+    ckpt = torch.load(w, map_location=device)  # load checkpoint
     autoencoder = None
-    if supp_weights is not None:
-        autoenc_pretrained = supp_weights.endswith('.pt')
-        if autoenc_pretrained:
-            autoencoder = AutoEncoder(autoenc_chs).to(device)
-            supp_ckpt = torch.load(supp_weights, map_location=device)
-            autoencoder.load_state_dict(supp_ckpt['model'])
-            print('pretrained autoencoder')
-            del supp_ckpt
-            if half:
-                autoencoder.half()
-            autoencoder.eval()
+    if 'autoencoder' in ckpt:
+        autoenc_chs = ckpt['autoencoder'].chs
+        autoencoder = AutoEncoder(autoenc_chs).to(device)
+        autoencoder.load_state_dict(ckpt['autoencoder'].state_dict())
+        autoencoder.half() if half else autoencoder.float()
+        autoencoder.eval()
+        print('Autoencoder loaded successfully')
+    # Loading Reconstruction model
+    rec_model = None
+    if 'rec_model' in ckpt:
+        rec_model = Decoder_Rec(cin=ckpt['rec_model'].cin, cout=ckpt['rec_model'].cout, first_chs=getattr(ckpt['rec_model'], 'first_chs', None) or getattr(ckpt['rec_model'], 'autoenc_chs', None)).to(device)
+        rec_model.load_state_dict(ckpt['rec_model'].float().state_dict())
+        rec_model.half() if half else rec_model.float()
+        rec_model.eval()
+        print('RecNet loaded successfully')
 
     # Dataloader
     if webcam:
@@ -174,12 +181,15 @@ def run(weights=ROOT / 'yolov5s.pt',  # model.pt path(s)
         # Inference
         if pt:
             visualize = increment_path(save_dir / Path(path).stem, mkdir=True) if visualize else False
-            if(autoencoder is not None):
-                T = model(img, augment=augment, cut_model=1, visualize=visualize)  # first half of the model
-                T_hat = autoencoder(T, visualize=visualize) 
-                pred = model(None, cut_model=2, T=T_hat, visualize=visualize)[0]  # second half of the model  
-            else:
-                pred = model(img, augment=augment, visualize=visualize)[0]
+            # Run model
+            T = model(img, augment=augment, cut_model=1, visualize=visualize)  # first half of the model
+            if noise_spot=='latent':
+                T = add_noise(T, noise_type=noise_type, noise_param=noise_param)
+            T_bottleneck = autoencoder(T, task='enc') if autoencoder is not None else T
+            if noise_spot=='bottleneck':
+                T_bottleneck = add_noise(T_bottleneck, noise_type=noise_type, noise_param=noise_param)
+            T_hat = autoencoder(T, task='dec', bottleneck=T_bottleneck) if autoencoder is not None else T_bottleneck
+            pred = model(None, cut_model=2, T=T_hat, visualize=visualize)[0]  # second half of the model
         elif onnx:
             if dnn:
                 net.setInput(img)
@@ -323,10 +333,10 @@ def parse_opt():
     parser.add_argument('--hide-conf', default=False, action='store_true', help='hide confidences')
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
-
-    # Supplemental arguments
-    parser.add_argument('--autoenc-chs',  type=int, nargs='*', default=[320, 192, 64], help='number of channels in autoencoder')
-    parser.add_argument('--supp-weights', type=str, default=None, help='initial weights path for the autoencoder')
+    # Noise addition arguments
+    parser.add_argument('--noise-type', default=None, choices=['uniform', 'gaussian', 'laplacian', 'dropout'], help='type of the added noise')
+    parser.add_argument('--noise-spot', default='latent', choices=['latent', 'bottleneck', 'input'], help='where noise should be applied')
+    parser.add_argument('--noise-param', type=float, default=1, help='noise parameter (length for uniform, std for gaussian, lambda for laplacian, prob for dropout)')
 
     opt = parser.parse_args()
     opt.imgsz *= 2 if len(opt.imgsz) == 1 else 1  # expand
