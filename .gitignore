@@ -26,6 +26,7 @@
 storage.googleapis.com
 runs/*
 working_dir/*
+vvc/*
 
 results*.csv
 
@@ -247,3 +248,4 @@ fabric.properties
 
 ## Exceptions
 !data/images/*
+!vvc/*.cfg

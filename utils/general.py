@@ -120,6 +120,10 @@ def print_args_to_file(opt, file):
         f.write((f'arguments: \n') + '\n '.join(f'{k}={v}' for k, v in vars(opt).items()))
 
 
+def get_vvc_path():
+    return Path(os.getenv('VVC_DIR') or 'vvc')
+
+
 def init_seeds(seed=0):
     # Initialize random number generator (RNG) seeds https://pytorch.org/docs/stable/notes/randomness.html
     # cudnn seed 0 settings are slower and more reproducible, else faster and less reproducible

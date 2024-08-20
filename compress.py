@@ -7,7 +7,6 @@ Usage:
 """
 
 import argparse
-from enum import auto
 import json
 import os
 import sys
@@ -32,7 +31,7 @@ from models.experimental import attempt_load
 from models.supplemental import AutoEncoder, Decoder_Rec
 from utils.datasets import create_dataloader
 from utils.general import (LOGGER, StatCalculator, check_file, check_dataset, check_img_size, check_requirements, check_suffix, check_yaml,
-                           coco80_to_coco91_class, colorstr, non_max_suppression, print_args,
+                           coco80_to_coco91_class, colorstr, non_max_suppression, print_args, get_vvc_path,
                            scale_coords, xywh2xyxy)
 from utils.metrics import ap_per_class, ConfusionMatrix
 from utils.plots import output_to_target, plot_images
@@ -41,6 +40,7 @@ from utils.callbacks import Callbacks
 from utils.loss import ComputeRecLoss
 from utils.utils import save_one_json, save_one_txt, process_batch
 
+VVC_DIR = get_vvc_path()
 
 def read_y_channel(file, w, h):
     raw = file.read(w*h)
@@ -73,41 +73,72 @@ def tiled_to_tensor(tiled, ch_w, ch_h, tensors_min, tensors_max):
     return tensor
 
 def compress_tensors(tensors, tensors_w, tensors_h, qp):
+    # Write the features to a yuv file
     data = tensors.cpu().numpy().flatten().astype(np.uint8)
-    vvc_report = Path('../vvc/vvc_report2.txt').open('w')
-    VVC_command = ['../vvc/vvencFFapp', '-c', '../vvc/lowdelay_faster_latent.cfg', '-i', '../vvc/tiled_img.yuv', '-b', '../vvc/bitstream2.bin', 
-                   '-o', '../vvc/reconst2.yuv', '--SourceWidth', str(tensors_w), '--SourceHeight', str(tensors_h), '-f', '1', '-fr', '1', '-q', str(qp)]
-    to_be_coded_file = '../vvc/tiled_img.yuv'
+    to_be_coded_file = str(VVC_DIR / 'tiled_img.yuv')
     with open(to_be_coded_file, 'wb') as f:
         f.write(data)
+    # Compress the yuv features using VVenc
+    vvc_report = (VVC_DIR / 'vvc_report_tensor.txt').open('w')
+    bitstream_file = str(VVC_DIR / 'bitstream_tensor.bin')
+    reconst_file = str(VVC_DIR / 'reconst_tensor.yuv')
+    VVC_command = [str(VVC_DIR / 'vvencFFapp'), 
+                   '-c', str(VVC_DIR / 'lowdelay_faster_latent.cfg'), 
+                   '-i', to_be_coded_file, 
+                   '-b', bitstream_file, 
+                   '-o', reconst_file,
+                   '-q', str(qp),
+                   '--SourceWidth', str(tensors_w), '--SourceHeight', str(tensors_h), 
+                   '-f', '1', '-fr', '1'
+                   ]
     subprocess.call(VVC_command, stdout=vvc_report)
     vvc_report.close()
-    bpp = os.path.getsize('../vvc/bitstream2.bin') * 8 / (tensors_w*tensors_h)
-    KB_num = os.path.getsize('../vvc/bitstream2.bin') / 1024.0
-    with open('../vvc/reconst2.yuv', 'rb') as f:
+    # Compute the volume of the compressed file
+    bpp = os.path.getsize(bitstream_file) * 8 / (tensors_w*tensors_h)
+    KB_num = os.path.getsize(bitstream_file) / 1024.0
+    # Load the decoded features to tensors for the rest of the processes
+    with open(reconst_file, 'rb') as f:
         tmp_reconst = read_y_channel(f, tensors_w, tensors_h)
     return torch.from_numpy(tmp_reconst.copy()).to(tensors.device, non_blocking=True), bpp, KB_num
 
 def compress_input(img, qp, half=False):
     import cv2
     h, w = img.shape[-2:]
-    jpg2yuv_report = Path('../vvc/jpg2yuv_report.txt').open('w')
-    vvc_report = Path('../vvc/vvc_report.txt').open('w')
-    yuv2png_report = Path('../vvc/yuv2png_report.txt').open('w')
-    jpg2yuv_command = ['ffmpeg', '-i', '../vvc/image.png', '-f', 'rawvideo', '-pix_fmt', 'yuv444p', '-dst_range', '1', '../vvc/yuv_img.yuv', '-y']
+    jpg2yuv_report = (VVC_DIR / 'jpg2yuv_report.txt').open('w')
+    vvc_report = (VVC_DIR / 'vvc_report.txt').open('w')
+    yuv2png_report = (VVC_DIR / 'yuv2png_report.txt').open('w')
+    # Convert png input image to yuv using FFmpeg
+    yuv_file = str(VVC_DIR / 'yuv_img.yuv')
+    jpg2yuv_command = ['ffmpeg', '-i', str(VVC_DIR / 'image.png'), 
+                       '-f', 'rawvideo', '-pix_fmt', 'yuv444p', '-dst_range', '1', yuv_file, '-y']
     subprocess.call(jpg2yuv_command, stdout=jpg2yuv_report, stderr=subprocess.STDOUT)
-    VVC_command = ['../vvc/vvencFFapp', '-c', '../vvc/lowdelay_faster_444.cfg', '-i', '../vvc/yuv_img.yuv', '-b', '../vvc/bitstream.bin', 
-                   '-o', '../vvc/reconst.yuv', '--SourceWidth', str(w), '--SourceHeight', str(h), '-f', '1', '-fr', '1', '-q', str(qp)]
+    # Compress yuv input image using VVenc
+    bitstream_file = str(VVC_DIR / 'bitstream.bin')
+    reconst_file = str(VVC_DIR / 'reconst.yuv')
+    VVC_command = [str(VVC_DIR / 'vvencFFapp'), 
+                   '-c', str(VVC_DIR / 'lowdelay_faster_444.cfg'), 
+                   '-i', yuv_file, 
+                   '-b', bitstream_file, 
+                   '-o', reconst_file, 
+                   '-q', str(qp),
+                   '--SourceWidth', str(w), '--SourceHeight', str(h), 
+                   '-f', '1', '-fr', '1'
+                   ]
     subprocess.call(VVC_command, stdout=vvc_report)
-    bpp = os.path.getsize('../vvc/bitstream.bin') * 8 / (w*h)
-    KB_num = os.path.getsize('../vvc/bitstream.bin') / 1024.0
-    yuv2png_command = ['ffmpeg', '-f', 'rawvideo', '-pix_fmt', 'yuv444p', '-s', f"{w}x{h}", '-src_range', '1', '-i', '../vvc/reconst.yuv',
-                       '-frames', '1', '-pix_fmt', 'rgb24', '../vvc/output.png', '-y']
+    # Compute the volume of the compressed file
+    bpp = os.path.getsize(bitstream_file) * 8 / (w*h)
+    KB_num = os.path.getsize(bitstream_file) / 1024.0
+    # Convert the decoded image from yuv to png
+    reconst_png =  str(VVC_DIR / 'output.png')
+    yuv2png_command = ['ffmpeg', '-f', 'rawvideo', '-pix_fmt', 'yuv444p', '-s', f"{w}x{h}", '-src_range', '1', '-i', reconst_file,
+                       '-frames', '1', '-pix_fmt', 'rgb24', reconst_png, '-y']
     subprocess.call(yuv2png_command, stdout=yuv2png_report, stderr=subprocess.STDOUT)
+
     jpg2yuv_report.close()
     vvc_report.close()
     yuv2png_report.close()
-    rec = cv2.imread('../vvc/output.png')  # BGR
+    # Load the decoded image to tensors for the rest of the processes
+    rec = cv2.imread(reconst_png)  # BGR
     rec = rec.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB
     rec = np.ascontiguousarray(rec)
     rec = torch.from_numpy(rec).to(img.device, non_blocking=True)
@@ -126,8 +157,8 @@ def get_yolo_prediction(T, autoencoder, model):
 
 
 @torch.no_grad()
-def val_closed_loop(opt,
-                    callbacks=Callbacks()):
+def compress(opt,
+             callbacks=Callbacks()):
 
     save_dir, batch_size, weights, single_cls, data, half, plots, tensors_min, \
         tensors_max, track_stats, chs_in_w, chs_in_h, compression, qp = \
@@ -156,10 +187,11 @@ def val_closed_loop(opt,
         autoencoder.half() if half else autoencoder.float()
         autoencoder.eval()
         print('pretrained autoencoder')
+        print(autoenc_chs)
     # Loading Reconstruction model
     rec_model = None
     if 'rec_model' in ckpt:
-        rec_model = Decoder_Rec(cin=ckpt['rec_model'].cin, cout=ckpt['rec_model'].cout, first_chs=autoenc_chs).to(device)
+        rec_model = Decoder_Rec(cin=ckpt['rec_model'].cin, cout=ckpt['rec_model'].cout, first_chs=getattr(ckpt['rec_model'], 'first_chs', None) or getattr(ckpt['rec_model'], 'autoenc_chs', None)).to(device)
         rec_model.load_state_dict(ckpt['rec_model'].float().state_dict())
         rec_model.half() if half else rec_model.float()
         rec_model.eval()
@@ -179,14 +211,31 @@ def val_closed_loop(opt,
     iouv = torch.linspace(0.5, 0.95, 10).to(device)  # iou vector for mAP@0.5:0.95
     niou = iouv.numel()
 
-    # Dataloader
     if device.type != 'cpu':
         model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(next(model.parameters())))  # run once
-    pad = 0.0
     task = 'val'
-    dataloader = create_dataloader(data[task], imgsz, batch_size, gs, single_cls, pad=pad, rect=True, rect_img=False, store_img=(compression=='input'),
-                                       prefix=colorstr(f'{task}: '))[0]
 
+    # Compute the clipping range (-+6\sigma) on the val dataset if it is not given
+    if compression=='bottleneck' and (tensors_min is None or tensors_max is None):
+        dataloader = create_dataloader(data[task], imgsz, batch_size, gs, single_cls, pad=0.5, rect=True, rect_img=False, store_img=False,
+                                       prefix=colorstr(f'{task}: '))[0]
+        stats_bottleneck = StatCalculator((-3,3), 1000, per_chs=False)
+        for img, targets, paths, shapes in tqdm(dataloader, desc='calculating clipping range on the dataset ...'):
+            img = img.to(device, non_blocking=True)
+            img = img.half() if half else img.float()  # uint8 to fp16/32
+            img /= 255  # 0 - 255 to 0.0 - 1.0
+            targets = targets.to(device)
+            nb, _, height, width = img.shape  # batch size, channels, height, width
+            # Run model
+            T = model(img, cut_model=1)  # first half of the model
+            T_bottleneck = autoencoder(T, task='enc') if autoencoder is not None else T
+            stats_bottleneck.update_stats(T_bottleneck.detach().clone().cpu().numpy())
+        tensors_min, tensors_max = -6*stats_bottleneck.std, 6*stats_bottleneck.std
+        print(f'clipping range: [{tensors_min:.4f}, {tensors_max:.4f}]')
+
+    # Run the compression loop
+    dataloader = create_dataloader(data[task], imgsz, 1, gs, single_cls, pad=0.0, rect=True, rect_img=False, store_img=(compression=='input'),
+                                   prefix=colorstr(f'{task}: '))[0]
     seen = 0
     confusion_matrix = ConfusionMatrix(nc=nc)
     names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
@@ -195,34 +244,13 @@ def val_closed_loop(opt,
     dt, p, r, f1, mp, mr, map50, map = [0.0, 0.0, 0.0], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
     loss = torch.zeros(3, device=device)
     jdict, stats, ap, ap_class = [], [], [], []
-
     stats_error = StatCalculator(opt.dist_range, opt.bins) if track_stats else None
     compute_rec_loss = ComputeRecLoss(MAX=1.0, w_grad=0, compute_grad=True)  # init loss class
-
-    ch_num = chs_in_w * chs_in_h
     bpp_seq = []
     KB_seq = []
     psnr_seq = []
     psnr_mag_seq = []
-
-    if compression=='bottleneck' and (tensors_min is None or tensors_max is None):
-        stats_bottleneck = StatCalculator((-3,3), 1000, per_chs=False)
-        for batch_i, (img, targets, paths, shapes) in enumerate(tqdm(dataloader, desc=s)):
-            t1 = time_sync()
-            img = img.to(device, non_blocking=True)
-            img = img.half() if half else img.float()  # uint8 to fp16/32
-            img /= 255  # 0 - 255 to 0.0 - 1.0
-            targets = targets.to(device)
-            nb, _, height, width = img.shape  # batch size, channels, height, width
-            t2 = time_sync()
-            dt[0] += t2 - t1
-            # Run model
-            T = model(img, cut_model=1)  # first half of the model
-            T_bottleneck = autoencoder(T, task='enc') if autoencoder is not None else T
-            stats_bottleneck.update_stats(T_bottleneck.detach().clone().cpu().numpy())
-        tensors_min, tensors_max = -6*stats_bottleneck.std, 6*stats_bottleneck.std
-        print(f'clipping range: [{tensors_min:.4f}, {tensors_max:.4f}]')
-
+    pix_seq = []
     for fr, (img, targets, paths, shapes) in enumerate(tqdm(dataloader, desc=s)):
         t1 = time_sync()
         img = img.to(device, non_blocking=True)
@@ -233,8 +261,9 @@ def val_closed_loop(opt,
         t2 = time_sync()
         dt[0] += t2 - t1
         ch_h, ch_w = img.shape[-2:]
-        ch_w //= 8     # beware that the stride is 8 at layers 3 and 4
-        ch_h //= 8     # beware that the stride is 8 at layers 3 and 4
+        ch_w //= 8     # stride is 8 at layers 3 and 4
+        ch_h //= 8     # stride is 8 at layers 3 and 4
+        pix_seq.append(shapes[0][0][0]*shapes[0][0][1])
         
         if compression == 'input':
             rec_img, bpp, KB_num = compress_input(img, qp, half)
@@ -328,8 +357,8 @@ def val_closed_loop(opt,
     else:
         nt = torch.zeros(1)
 
-    bpp_tot = sum(bpp_seq) / len(dataloader)
-    MB_tot = sum(KB_seq) / 1024.0
+    # bpp_tot = sum(bpp_seq) / len(dataloader)
+    bpp_tot = sum(KB_seq) * 1024 * 8 / sum(pix_seq)
     psnr_tot = sum(psnr_seq) / len(dataloader)
     psnr_mag_tot = sum(psnr_mag_seq) / len(dataloader)
 
@@ -338,9 +367,9 @@ def val_closed_loop(opt,
     LOGGER.info(pf % ('all', seen, nt.sum(), mp, mr, map50, map))
     # Save results
     file = (save_dir / 'result').with_suffix('.csv')
-    s = '' if file.exists() else (('%20s,' * 9) % ('QP', 'bpp', 'MB_tot', 'psnr', 'psnr_grad', 'mAP@.5 (%)', 'mAP@.5:.95 (%)', 'P', 'R')) + '\n'  # add header
+    s = '' if file.exists() else (('%20s,' * 8) % ('QP', 'bpp', 'psnr', 'psnr_grad', 'mAP@.5 (%)', 'mAP@.5:.95 (%)', 'P', 'R')) + '\n'  # add header
     with open(file, 'a') as f:
-        f.write(s + (('%20.5g,' * 9) % (qp, bpp_tot, MB_tot, psnr_tot, psnr_mag_tot, map50*100, map*100, mp, mr)) + '\n')
+        f.write(s + (('%20.5g,' * 8) % (qp, bpp_tot, psnr_tot, psnr_mag_tot, map50*100, map*100, mp, mr)) + '\n')
     
     if track_stats:
         stats_error.output_stats(save_dir, f'qp{qp}')
@@ -356,7 +385,6 @@ def val_closed_loop(opt,
                 f.write(('%20.5g,' + '%20s,' + '%20.5g,' * 6) % (qp, names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i]) + '\n')
 
     print(f'\nbit per pixel <qp{qp}> = {bpp_tot:.2f}')
-    print(f'total size of the images (MB) <qp{qp}> = {MB_tot:.2f}')
     print(f'mean PSNR (dB) <qp{qp}> = {psnr_tot:.2f}')
     print(f'mean PSNR_Grad (dB) <qp{qp}> = {psnr_mag_tot:.2f}')
 
@@ -395,9 +423,9 @@ def val_closed_loop(opt,
             map, map50 = eval.stats[:2]  # update results (mAP@0.5:0.95, mAP@0.5)
             # Save results
             file = (save_dir / 'result').with_suffix('.csv')
-            s = '' if file.exists() else (('%20s,' * 7) % ('QP', 'bpp', 'MB_tot', 'psnr', 'psnr_grad', 'mAP@.5 (%)', 'mAP@.5:.95 (%)')) + '\n'  # add header
+            s = '' if file.exists() else (('%20s,' * 6) % ('QP', 'bpp', 'psnr', 'psnr_grad', 'mAP@.5 (%)', 'mAP@.5:.95 (%)')) + '\n'  # add header
             with open(file, 'a') as f:
-                f.write(s + (('%20.5g,' * 7) % (qp, bpp_tot, MB_tot, psnr_tot, psnr_mag_tot, map50*100, map*100)) + '\n')
+                f.write(s + (('%20.5g,' * 6) % (qp, bpp_tot, psnr_tot, psnr_mag_tot, map50*100, map*100)) + '\n')
         except Exception as e:
             LOGGER.info(f'pycocotools unable to run: {e}')
 
@@ -415,7 +443,7 @@ def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data', type=str, default=ROOT / 'data/coco128.yaml', help='dataset.yaml path')
     parser.add_argument('--weights', type=str, default=ROOT / 'yolov5s.pt', help='model.pt path(s)')
-    parser.add_argument('--batch-size', type=int, default=1, help='batch size')
+    parser.add_argument('--batch-size', type=int, default=16, help='batch size')
     parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=512, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.001, help='confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.6, help='NMS IoU threshold')
@@ -426,7 +454,7 @@ def parse_opt():
     parser.add_argument('--save-hybrid', action='store_true', help='save label+prediction hybrid results to *.txt')
     parser.add_argument('--save-conf', action='store_true', help='save confidences in --save-txt labels')
     parser.add_argument('--save-json', action='store_true', help='save a COCO-JSON results file')
-    parser.add_argument('--project', default=ROOT / 'runs/img_compression', help='save to project/name')
+    parser.add_argument('--project', default=ROOT / 'runs/compression', help='save to project/name')
     parser.add_argument('--name', default='exp', help='save to project/name')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
@@ -446,6 +474,7 @@ def parse_opt():
     opt.data = check_yaml(opt.data)  # check YAML
     opt.save_json |= opt.data.endswith('coco.yaml')
     opt.save_txt |= opt.save_hybrid
+    opt.track_stats &= opt.compression=='bottleneck'
     print_args(FILE.stem, opt)
     return opt
 
@@ -459,11 +488,11 @@ def main(opt):
     (save_dir / 'labels' if opt.save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
     opt.save_dir = str(save_dir)
 
-    val_closed_loop(opt)
+    compress(opt)
 
 
 def run(**kwargs):
-    # Usage: import val_closed_loop; val_closed_loop.run(data='coco128.yaml', imgsz=320, weights='yolov5m.pt')
+    # Usage: import compress; compress.run(data='coco128.yaml', imgsz=320, weights='yolov5m.pt')
     opt = parse_opt(True)
     for k, v in kwargs.items():
         setattr(opt, k, v)

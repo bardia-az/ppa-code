@@ -30,7 +30,7 @@ from tqdm import tqdm
 
 from utils.augmentations import Albumentations, augment_hsv, copy_paste, letterbox, mixup, random_perspective
 from utils.general import (LOGGER, check_dataset, check_requirements, check_yaml, clean_str, segments2boxes, xyn2xy,
-                           xywh2xyxy, xywhn2xyxy, xyxy2xywhn)
+                           xywh2xyxy, xywhn2xyxy, xyxy2xywhn, get_vvc_path)
 from utils.torch_utils import torch_distributed_zero_first
 
 # Parameters
@@ -347,7 +347,7 @@ class LoadImages:
         
         # Store the image
         if self.store_img:
-            cv2.imwrite('../vvc_new/image.png', img)
+            cv2.imwrite(str(get_vvc_path() / 'image.png'), img)
 
         # Convert
         img = img.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB
@@ -746,7 +746,7 @@ class LoadImagesAndLabels(Dataset):
 
         # Store the pre-processed image for the input compression evaluation
         if self.store_img:
-            cv2.imwrite('../vvc/image.png', img)
+            cv2.imwrite(str(get_vvc_path() / 'image.png'), img)
         
         # Convert
         img = img.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB
