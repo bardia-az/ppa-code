@@ -49,7 +49,7 @@ from utils.loss import ComputeLoss, CompressibilityLoss, ComputeRecLoss
 from utils.plots import plot_labels, plot_evolve
 from utils.torch_utils import EarlyStopping, ModelEMA, de_parallel, select_device, torch_distributed_zero_first
 from utils.loggers.wandb.wandb_utils import check_wandb_resume
-from utils.metrics import fitness_adv
+from utils.metrics import fitness_adv, fitness
 from utils.loggers import Loggers
 from utils.callbacks import Callbacks
 
