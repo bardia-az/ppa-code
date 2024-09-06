@@ -43,7 +43,7 @@ def run(weights=None,  # model.pt path(s)
         noise_type=None,
         noise_spot='latent',
         noise_param=1,
-        cut_layer=-1,
+        cut_layer=4,
         model=None,
         save_dir=Path(''),
         autoencoder=None,
@@ -150,7 +150,7 @@ def run(weights=None,  # model.pt path(s)
 
 def parse_opt():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'yolov5s.pt', help='model.pt path(s)')
+    parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'yolov5m.pt', help='model.pt path(s)')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--project', default=ROOT / 'runs/val', help='save to project/name')
     parser.add_argument('--name', default='exp', help='save to project/name')
@@ -159,8 +159,8 @@ def parse_opt():
     parser.add_argument('--noise-type', default=None, choices=['uniform', 'gaussian', 'laplacian', 'dropout'], help='type of the added noise')
     parser.add_argument('--noise-spot', default='latent', choices=['latent', 'bottleneck', 'input'], help='where noise should be applied')
     parser.add_argument('--noise-param', type=float, default=1, help='noise parameter (length for uniform, std for gaussian, lambda for laplacia, prob for dropout)')
-    parser.add_argument('--cut-layer', type=int, default=-1, help='the index of the cutting layer (AFTER this layer, the model will be split)')
-    parser.add_argument('--sample-img', type=str, default=None, help='A sample image or a directory of images that wouold be reconstructed and stored')
+    parser.add_argument('--cut-layer', type=int, default=4, help='the index of the cutting layer (AFTER this layer, the model will be split)')
+    parser.add_argument('--sample-img', type=str, default=ROOT / 'data/images', help='A sample image or a directory of images that wouold be reconstructed and stored')
     parser.add_argument('--compression', type=str, default=None, choices=['input', 'bottleneck'], help='compress input or latent space or do not compress at all')
     parser.add_argument('--qp', type=int, default=24, help='QP for the vvc encoder')
     parser.add_argument('--chs-in-w', type=int, default=8, help='number of channels in width in the tiled tensor')

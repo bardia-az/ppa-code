@@ -67,7 +67,7 @@ def run(data,
         dist_range=[-10,14],
         bins=10000,
         data_suffix='',
-        cut_layer=0,
+        cut_layer=4,
         model=None,
         dataloader=None,
         save_dir=Path(''),
@@ -338,7 +338,7 @@ def parse_opt():
     parser = argparse.ArgumentParser()
     # Object detection arguments
     parser.add_argument('--data', type=str, default=ROOT / 'data/coco128.yaml', help='dataset.yaml path')
-    parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'yolov5s.pt', help='model.pt path(s)')
+    parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'yolov5m.pt', help='model.pt path(s)')
     parser.add_argument('--batch-size', type=int, default=32, help='batch size')
     parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=512, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.001, help='confidence threshold')
@@ -357,7 +357,7 @@ def parse_opt():
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
     # Noise addition arguments
-    parser.add_argument('--noise-type', default=None, choices=['uniform', 'gaussian', 'laplacian', 'dropout'], help='type of the added noise')
+    parser.add_argument('--noise-type', default=None, choices=['uniform', 'gaussian', 'laplacian', 'dropout'], help='type of the added noise. If None, no noise will be added')
     parser.add_argument('--noise-spot', default='latent', choices=['latent', 'bottleneck', 'input'], help='where noise should be applied')
     parser.add_argument('--noise-param', type=float, default=1, help='noise parameter (length for uniform, std for gaussian, lambda for laplacian, prob for dropout)')
     # Supplemental arguments
@@ -365,7 +365,7 @@ def parse_opt():
     parser.add_argument('--dist-range',  type=float, nargs='*', default=[-3,3], help='the range of the distribution')
     parser.add_argument('--bins', type=int, default=1000, help='number of bins in histogram')
     parser.add_argument('--data-suffix', type=str, default='', help='data path suffix')
-    parser.add_argument('--cut-layer', type=int, default=0, help='the index of the cutting layer (AFTER this layer, the model will be split)')
+    parser.add_argument('--cut-layer', type=int, default=4, help='the index of the cutting layer (AFTER this layer, the model will be split)')
 
     opt = parser.parse_args()
     opt.data = check_yaml(opt.data)  # check YAML

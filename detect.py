@@ -63,6 +63,7 @@ def run(weights=ROOT / 'yolov5s.pt',  # model.pt path(s)
         noise_type=None,
         noise_spot='latent',
         noise_param=1,
+        cut_layer=4,
         ):
     source = str(source)
     save_img = not nosave and not source.endswith('.txt')  # save inference images
@@ -88,6 +89,7 @@ def run(weights=ROOT / 'yolov5s.pt',  # model.pt path(s)
     stride, names = 64, [f'class{i}' for i in range(1000)]  # assign defaults
     if pt:
         model = torch.jit.load(w) if 'torchscript' in w else attempt_load(weights, map_location=device)
+        model.cutting_layer = getattr(model, 'cutting_layer', cut_layer)
         stride = int(model.stride.max())  # model stride
         names = model.module.names if hasattr(model, 'module') else model.names  # get class names
         if half:
@@ -308,7 +310,7 @@ def run(weights=ROOT / 'yolov5s.pt',  # model.pt path(s)
 
 def parse_opt():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'yolov5s.pt', help='model path(s)')
+    parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'yolov5m.pt', help='model path(s)')
     parser.add_argument('--source', type=str, default=ROOT / 'data/images', help='file/dir/URL/glob, 0 for webcam')
     parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=[640], help='inference size h,w')
     parser.add_argument('--conf-thres', type=float, default=0.25, help='confidence threshold')
@@ -337,6 +339,8 @@ def parse_opt():
     parser.add_argument('--noise-type', default=None, choices=['uniform', 'gaussian', 'laplacian', 'dropout'], help='type of the added noise')
     parser.add_argument('--noise-spot', default='latent', choices=['latent', 'bottleneck', 'input'], help='where noise should be applied')
     parser.add_argument('--noise-param', type=float, default=1, help='noise parameter (length for uniform, std for gaussian, lambda for laplacian, prob for dropout)')
+    # Supplemental arguments
+    parser.add_argument('--cut-layer', type=int, default=4, help='the index of the cutting layer (AFTER this layer, the model will be split)')
 
     opt = parser.parse_args()
     opt.imgsz *= 2 if len(opt.imgsz) == 1 else 1  # expand

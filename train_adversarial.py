@@ -118,7 +118,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         with torch_distributed_zero_first(LOCAL_RANK):
             weights = attempt_download(weights)  # download if not found locally
         ckpt = torch.load(weights, map_location=device)  # load checkpoint
-        cutting_layer = getattr(ckpt['model'], 'cutting_layer', False) or opt.cut_layer
+        cutting_layer = getattr(ckpt['model'], 'cutting_layer', opt.cut_layer)
         model = Model(cfg or ckpt['model'].yaml, ch=3, nc=nc, anchors=hyp.get('anchors'), cutting_layer=cutting_layer).to(device)  # create
         exclude = ['anchor'] if (cfg or hyp.get('anchors')) and not resume else []  # exclude keys
         csd = ckpt['model'].float().state_dict()  # checkpoint state_dict as FP32
@@ -159,7 +159,9 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         for param in autoencoder.parameters():
             param.requires_grad = False
     
-    if(train_yolo=='all'):
+    if freeze:
+        freeze = freeze
+    elif(train_yolo=='all'):
         freeze = 0
     elif(train_yolo=='backend'):
         freeze = 5
@@ -587,11 +589,11 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
 
 def parse_opt(known=False):
     parser = argparse.ArgumentParser()
-    parser.add_argument('--weights', type=str, default=ROOT / 'yolov5s.pt', help='initial weights path')
+    parser.add_argument('--weights', type=str, default=ROOT / 'yolov5m.pt', help='initial weights path')
     parser.add_argument('--cfg', type=str, default='', help='model.yaml path')
     parser.add_argument('--data', type=str, default=ROOT / 'data/coco128.yaml', help='dataset.yaml path')
-    parser.add_argument('--hyp', type=str, default=ROOT / 'data/hyps/hyp.scratch.yaml', help='hyperparameters path')
-    parser.add_argument('--epochs', type=int, default=300)
+    parser.add_argument('--hyp', type=str, default=ROOT / 'data/hyps/hyp.scratch-high.yaml', help='hyperparameters path')
+    parser.add_argument('--epochs', type=int, default=40)
     parser.add_argument('--batch-size', type=int, default=16, help='total batch size for all GPUs, -1 for autobatch')
     parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=512, help='train, val image size (pixels)')
     parser.add_argument('--rect', action='store_true', help='rectangular training')
@@ -616,7 +618,7 @@ def parse_opt(known=False):
     parser.add_argument('--linear-lr', action='store_true', help='linear LR')
     parser.add_argument('--label-smoothing', type=float, default=0.0, help='Label smoothing epsilon')
     parser.add_argument('--patience', type=int, default=100, help='EarlyStopping patience (epochs without improvement)')
-    parser.add_argument('--freeze', type=int, default=0, help='Number of layers to freeze. backbone=10, all=24')
+    parser.add_argument('--freeze', type=int, default=None, help='Number of layers to freeze. backbone=10, all=24')
     parser.add_argument('--save-period', type=int, default=-1, help='Save checkpoint every x epochs (disabled if < 1)')
     parser.add_argument('--local_rank', type=int, default=-1, help='DDP parameter, do not modify')
     # Weights & Biases arguments
@@ -626,18 +628,18 @@ def parse_opt(known=False):
     parser.add_argument('--artifact_alias', type=str, default='latest', help='W&B: Version of dataset artifact to use')
     # Supplemental arguments
     parser.add_argument('--autoenc-chs',  type=int, nargs='*', default=[], help='number of channels in autoencoder suggested: [192, 128, 64]')
-    parser.add_argument('--train-yolo', type=str, default='all', help='which part of the yolo gets trained: backend, all, nothing')
+    parser.add_argument('--train-yolo', type=str, default='nothing', help='which part of the yolo gets trained: backend, all, nothing')
     parser.add_argument('--freeze-autoenc', action='store_true', help='determins autoencoder weights to be freezed')
     parser.add_argument('--rec-only', action='store_true', help='only train the reconstruction netweork')
     parser.add_argument('--cut-layer', type=int, default=4, help='the index of the cutting layer (AFTER this layer, the model will be split) (ONLY 4 is supported for now)')
     # Some of the hyperparameters
     parser.add_argument('--lr0', type=float, default=0.01, help='initial learning rate')
-    parser.add_argument('--lrf', type=float, default=0.2, help='final OneCycleLR learning rate (lr0 * lrf)')
+    parser.add_argument('--lrf', type=float, default=0.002, help='final OneCycleLR learning rate (lr0 * lrf)')
     parser.add_argument('--warmup-bias-lr', type=float, default=0.1, help='warmup initial bias lr')
     parser.add_argument('--weight-decay', type=float, default=0.0005, help='optimizer weight decay 5e-4')
     parser.add_argument('--w-compress', type=float, default=0, help='The weight of the compressibility loss')
-    parser.add_argument('--w-rec', type=float, default=1, help='The weight of the reconstruction loss')
-    parser.add_argument('--w-grad', type=float, default=1, help='The weight of the image gradient loss in reconstruction loss')
+    parser.add_argument('--w-rec', type=float, default=0, help='The weight of the reconstruction loss')
+    parser.add_argument('--w-grad', type=float, default=5, help='The weight of the image gradient loss in reconstruction loss')
     parser.add_argument('--clip-grad', type=float, default=-1, help='The max norm of the clipped gradient')
     parser.add_argument('--sample-img', type=str, default=None, help='The sample image to be reconstructed and kept track during training')
     

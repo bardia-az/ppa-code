@@ -173,7 +173,7 @@ def compress(opt,
     # Load model
     check_suffix(weights, '.pt')
     model = attempt_load(weights, map_location=device)  # load FP32 model
-    model.cutting_layer = model.cutting_layer if hasattr(model, 'cutting_layer') else opt.cut_layer
+    model.cutting_layer = getattr(model, 'cutting_layer', opt.cut_layer)
     gs = max(int(model.stride.max()), 32)  # grid size (max stride)
     imgsz = check_img_size(opt.imgsz, s=gs)  # check image size
 
@@ -442,7 +442,7 @@ def compress(opt,
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data', type=str, default=ROOT / 'data/coco128.yaml', help='dataset.yaml path')
-    parser.add_argument('--weights', type=str, default=ROOT / 'yolov5s.pt', help='model.pt path(s)')
+    parser.add_argument('--weights', type=str, default=ROOT / 'yolov5m.pt', help='model.pt path(s)')
     parser.add_argument('--batch-size', type=int, default=16, help='batch size')
     parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=512, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.001, help='confidence threshold')
@@ -467,7 +467,7 @@ def parse_opt():
     parser.add_argument('--chs-in-h', type=int, default=8, help='number of channels is height in the tiled tensor')
     parser.add_argument('--tensors-min', type=float, default=None, help='the clipping lower bound for the intermediate tensors')
     parser.add_argument('--tensors-max', type=float, default=None, help='the clipping upper bound for the intermediate tensors')
-    parser.add_argument('--compression', type=str, default='input', help='compress input or latent space ("input", "bottleneck")')
+    parser.add_argument('--compression', type=str, default='input', choices=['bottleneck', 'input'], help='compress input or latent space ("input", "bottleneck")')
     parser.add_argument('--cut-layer', type=int, default=4, help='the index of the cutting layer (AFTER this layer, the model will be split)')
 
     opt = parser.parse_args()
