@@ -1,9 +1,9 @@
-# PPA-CODe: **P**rivacy-**P**reserving **A**toencoder for **C**olaborative **O**bject **De**tection
-This repository is the official implementation of the paper "**P**rivacy-**P**reserving **A**toencoder for **C**olaborative **O**bject **De**tection", which is originally forked from the [YOLOv5 repository](https://github.com/ultralytics/yolov5).
+# PPA-CODe: **P**rivacy-**P**reserving **A**utoencoder for **C**ollaborative **O**bject **De**tection
+This repository is the official implementation of the paper "[**P**rivacy-**P**reserving **A**utoencoder for **C**ollaborative **O**bject **De**tection](https://ieeexplore.ieee.org/document/10667003)", which is originally forked from the [YOLOv5 repository](https://github.com/ultralytics/yolov5).
 
 ## Paper
 
-**Paper**: [arXiv](https://arxiv.org/abs/2402.18864), [IEEE-TIP](https://ieeexplore.ieee.org/document/10667003)
+**Paper**: [arXiv](https://arxiv.org/abs/2402.18864), [IEEE-TIP (Early Access)](https://ieeexplore.ieee.org/document/10667003)
 
 **Bibtex citation**:
 ```
@@ -20,7 +20,7 @@ This repository is the official implementation of the paper "**P**rivacy-**P**re
 ```
 
 ## Usage
-There are 6 main tasks in this project that can executed through the provided python codes in the root directory:
+There are 6 main tasks in this project that can be executed through the provided python codes in the root directory:
 
 `val.py`: To validate the model on the object detection and obtain mAP values and the quality of the Model Inversion Attack (MAI).  
 `compress.py`: To validate the whole pipeline including the compression part using VVC  to obtain mAP and bitrate values.  
@@ -39,6 +39,8 @@ python val.py --data data/coco.yaml --weights <path/to/the/weight.pt>
 ### Validation with Compression
 `compress.py` is exactly the same as `val.py` but with VVC compression included. It can be used to reproduce the results of Fig. 9a and Fig. 9b in the paper.
 
+*To be able to run `compress.py`, you need to download [VVenC](https://github.com/fraunhoferhhi/vvenc/releases/tag/v1.1.0), build it, and put the executable file *vvencFFapp* into the vvc folder.
+
 * For Benchmark-input, we used `$QP` values of {28, 32, 34, 36, 39, 42, 44}:
 ```
 python compress.py --data data/coco.yaml --qp $QP --compression input
@@ -56,15 +58,15 @@ python compress.py --data data/coco.yaml --weights <path/to/cmprs0_rec0.0.pt> --
 
 * For Proposed, we used the combinitaion of the following `$QP`s and `$WEIGHT`s to generate the 9 points in the rate-accuracy and privacy-accuracy planes.  
 (`$QP`, `$WEIGHT`) =  
-(25, cmprs1_rec1.0.pt),  
-(28, cmprs1_rec1.0.pt),  
-(31, cmprs1_rec1.5.pt),  
-(31, cmprs2_rec1.5.pt),  
-(30, cmprs4_rec2.0.pt),  
-(33, cmprs4_rec2.0.pt),  
-(35, cmprs4_rec2.0.pt),  
-(37, cmprs4_rec2.0.pt),  
-(37, cmprs4_rec1.0.pt)
+(25, [cmprs1_rec1.0.pt](https://drive.google.com/file/d/1wO-n56LUmEeuZkhBF6Il1E0j70Dqupfm/view?usp=sharing)),  
+(28, [cmprs1_rec1.0.pt](https://drive.google.com/file/d/1wO-n56LUmEeuZkhBF6Il1E0j70Dqupfm/view?usp=sharing)),  
+(31, [cmprs1_rec1.5.pt](https://drive.google.com/file/d/1rz5JhyZ2KYQ9bZzmH2mzYZ4wNnE0dUpD/view?usp=sharing)),  
+(31, [cmprs2_rec1.5.pt](https://drive.google.com/file/d/1FbZ3BaWB9sahInSUy1H6nt24B2ktRW-F/view?usp=sharing)),  
+(30, [cmprs4_rec2.0.pt](https://drive.google.com/file/d/1_CrfrBt6bOH7c0U_17a5cfAVjMIE7n3y/view?usp=sharing)),  
+(33, [cmprs4_rec2.0.pt](https://drive.google.com/file/d/1_CrfrBt6bOH7c0U_17a5cfAVjMIE7n3y/view?usp=sharing)),  
+(35, [cmprs4_rec2.0.pt](https://drive.google.com/file/d/1_CrfrBt6bOH7c0U_17a5cfAVjMIE7n3y/view?usp=sharing)),  
+(37, [cmprs4_rec2.0.pt](https://drive.google.com/file/d/1_CrfrBt6bOH7c0U_17a5cfAVjMIE7n3y/view?usp=sharing)),  
+(37, [cmprs4_rec1.0.pt](https://drive.google.com/file/d/1Cof2lGhNVZwpW0oKPN4jCYO_W4Xc3pc0/view?usp=sharing))
 ```
 python compress.py --data data/coco.yaml --weights <path/to/$WEIGHT> --qp $QP --compression bottleneck --chs-in-w 8 --chs-in-h 8
 ```
@@ -106,5 +108,22 @@ in progress ...
 
 
 ## Model Zoo
-in progress ...
+
+| Model Weight | Explanation | w_cmprs | w_rec | \beta | mAP@.5:.95 | MIA PSNR (dB) |
+| --- | --- | --- | --- | --- | --- | --- |
+| [pretraining](https://drive.google.com/file/d/1G_rU36wgA3jNbWjnmzxAB0giQpDtzaMm/view?usp=sharing) | The pretrained autoencoder with associated trained InvNet (initialization phase) | 0 | N/A | N/A | 43.4 | 21.9 |
+| [Benchmark-latent](https://drive.google.com/file/d/1FN7eBTXo0g-YtjZr2lhhgqk8xbiUOYpT/view?usp=sharing) | The *Benchmark-latent* model with associated trained InvNet | 0 | 0 | N/A | 43.7 | 20.3 |
+| [Benchmark-bottleneck](https://drive.google.com/file/d/1zq3WIvI4N2YE8yBN9xiHtRMwLsa4aLlw/view?usp=sharing) | The *Benchmark-bottleneck* model with associated trained InvNet | 0 | 0 | N/A | 42.9 | 21.9 |
+| [cmprs0_rec0.5](https://drive.google.com/file/d/1LVMSAaC3j4Arby_YOvZrMXHaKn4dssSb/view?usp=sharing) | The adversarially trained model with associated trained InvNet | 0 | 0.5 | 5 | 42.8 | 18.7 |
+| [cmprs0_rec0.8](https://drive.google.com/file/d/1emLCcqoVJqJqlXKqJWr3CiahER_7Qh4d/view?usp=sharing) | The adversarially trained model with associated trained InvNet | 0 | 0.8 | 5 | 42.7 | 17.8 |
+| [cmprs0_rec1.2](https://drive.google.com/file/d/1kC_P4f3Nf53dxrBVeU0NiYJC9QBXcFBm/view?usp=sharing) | The adversarially trained model with associated trained InvNet | 0 | 1.2 | 5 | 42.4 | 17.7 |
+| [cmprs0_rec2.0](https://drive.google.com/file/d/1BM7Rf_Guci_gG-UssdHxrRdOisSEjtB7/view?usp=sharing) | The adversarially trained model with associated trained InvNet | 0 | 2.0 | 5 | 42.2 | 17.6 |
+| [cmprs1_rec1.0](https://drive.google.com/file/d/1wO-n56LUmEeuZkhBF6Il1E0j70Dqupfm/view?usp=sharing) | The adversarially trained model with associated trained InvNet | 1 | 1.0 | 5 | 42.1 | 17.5 |
+| [cmprs1_rec1.5](https://drive.google.com/file/d/1rz5JhyZ2KYQ9bZzmH2mzYZ4wNnE0dUpD/view?usp=sharing) | The adversarially trained model with associated trained InvNet | 1 | 1.5 | 5 | 41.7 | 17.7 |
+| [cmprs2_rec1.5](https://drive.google.com/file/d/1FbZ3BaWB9sahInSUy1H6nt24B2ktRW-F/view?usp=sharing) | The adversarially trained model with associated trained InvNet | 2 | 1.5 | 5 | 41.2 | 17.9 |
+| [cmprs4_rec1.0](https://drive.google.com/file/d/1Cof2lGhNVZwpW0oKPN4jCYO_W4Xc3pc0/view?usp=sharing) | The adversarially trained model with associated trained InvNet | 4 | 1.0 | 5 | 40.4 | 17.8 |
+| [cmprs4_rec2.0](https://drive.google.com/file/d/1_CrfrBt6bOH7c0U_17a5cfAVjMIE7n3y/view?usp=sharing) | The adversarially trained model with associated trained InvNet | 4 | 2.0 | 5 | 40.7 | 17.7 |
+| [cmprs0_rec0.1](https://drive.google.com/file/d/15xpJZle6GfatgZG23se7lEY3NteaKLEl/view?usp=sharing) | The adversarially trained model with associated trained InvNet | 0 | 0.1 | 0 | 42.9 | 21.2 |
+| [cmprs0_rec0.5](https://drive.google.com/file/d/1VxHcMAOomCDuEz3hd7JPwBZJeMtSIKd1/view?usp=sharing) | The adversarially trained model with associated trained InvNet | 0 | 0.5 | 0 | 42.9 | 19.9 |
+| [cmprs0_rec2.0](https://drive.google.com/file/d/1QK0PlS-07yG_elXKOV5f4mwCIy24sSbx/view?usp=sharing) | The adversarially trained model with associated trained InvNet | 0 | 2.0 | 0 | 42.7 | 19.9 |
 
