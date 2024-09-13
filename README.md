@@ -7,16 +7,16 @@ This repository is the official implementation of the paper "[**P**rivacy-**P**r
 
 **Bibtex citation**:
 ```
-@ARTICLE{10667003,
+@ARTICLE{ppa-code,
   author={Azizian, Bardia and Bajić, Ivan V.},
   journal={IEEE Transactions on Image Processing}, 
   title={Privacy-Preserving Autoencoder for Collaborative Object Detection}, 
   year={2024},
-  volume={},
+  volume={33},
   number={},
-  pages={1-1},
+  pages={4937-4951},
   doi={10.1109/TIP.2024.3451938}
-  }
+}
 ```
 
 ## Usage
@@ -83,7 +83,7 @@ Use `reconstruct.py` to run Model Inversion Attack (MIA) on the intercepted feat
 python reconstruct.py --sample-img <path/to/the/image(s)>
 ```
 
-### Trainig
+### Training
 Use `train.py` to train a model (with or without an autoencoder) in a typical manner using object detection and compressibility loss. This can be used for the pretraining phase before starting the main adversarial training stage.
 
 * Training the YOLOv5m model from scratch without an autoencoder:
@@ -96,7 +96,7 @@ python train.py --weights scratch --cfg models/yolov5m.yaml --data data/coco.yam
 python train.py --data data/coco.yaml --train-yolo nothing --autoenc-chs 192 128 64
 ```
 
-### Adversarial Trainig
+### Adversarial Training
 Use `train_adversarial.py` to train the whole model in an adversarial manner with the auxiliary RecNet model using object detection, compressibility, and reconstruction loss.
 
 ```
