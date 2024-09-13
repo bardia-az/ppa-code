@@ -3,7 +3,7 @@ This repository is the official implementation of the paper "[**P**rivacy-**P**r
 
 ## Paper
 
-**Paper**: [arXiv](https://arxiv.org/abs/2402.18864), [IEEE-TIP (Early Access)](https://ieeexplore.ieee.org/document/10667003)
+**Paper**: [arXiv](https://arxiv.org/abs/2402.18864), [IEEE-TIP](https://ieeexplore.ieee.org/document/10667003)
 
 **Bibtex citation**:
 ```
